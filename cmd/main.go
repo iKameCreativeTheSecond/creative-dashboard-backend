@@ -27,9 +27,9 @@ func main() {
 
 	// Print tasks with custom fields
 	for _, task := range tasks {
-		fmt.Printf("Task: %s (Completed: %v, Due: %s)\n", task.Name, task.Completed, task.DueOn)
+		fmt.Printf("ID: %s \n Task: %s (Completed: %v, Due: %s)\n", task.Gid, task.Name, task.Completed, task.DueOn)
 		if task.Assignee != nil {
-			fmt.Printf("  Assignee: %s\n", task.Assignee.Name)
+			fmt.Printf("  Assignee: %s - ID: %s\n", task.Assignee.Name, task.Assignee.Gid)
 		}
 		for _, cf := range task.CustomFields {
 			fmt.Printf("  - %s: %s\n", cf.Name, cf.DisplayValue)
