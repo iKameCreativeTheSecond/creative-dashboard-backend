@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -212,4 +213,51 @@ func GetPerformancePoint(uri, dbName, collName, indentifier string, startDate, e
 	}
 
 	return &results[0], nil
+}
+
+func GetMembersByTeam(uri, dbName, collName string, team string) ([]*collectionmodels.Member, error) {
+	// Example body request
+	// 	{
+	//     "teams": ["Art Creative"]
+	// 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	// defer client.Disconnect(ctx)
+	collection := client.Database(dbName).Collection(collName)
+
+	// if team == "" or null return all collection
+	if team == "" {
+		cursor, err := collection.Find(ctx, bson.M{})
+		if err != nil {
+			return nil, err
+		}
+		defer cursor.Close(ctx)
+
+		var results []*collectionmodels.Member
+		if err = cursor.All(ctx, &results); err != nil {
+			return nil, err
+		}
+		return results, nil
+	}
+
+	filter := bson.M{
+		"team": team,
+	}
+	cursor, err := collection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []*collectionmodels.Member
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+
+	if len(results) == 0 {
+		return nil, nil
+	}
+
+	return results, nil
 }

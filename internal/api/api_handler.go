@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	db "performance-dashboard-backend/internal/database"
+	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
 	"time"
 )
 
@@ -86,6 +87,41 @@ func PostHandlerPerformancePoint(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
+func PostHandlerStaffMember(w http.ResponseWriter, r *http.Request) {
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	teamsStrs := body["teams"].([]interface{})
+
+	var results []*collectionmodels.Member
+
+	if len(teamsStrs) == 0 {
+		// If no teams are specified, return all members
+		res, err := db.GetMembersByTeam(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"), "")
+		if err != nil {
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		results = append(results, res...)
+	} else {
+		team := make([]string, len(teamsStrs))
+		for i, v := range teamsStrs {
+			team[i] = v.(string)
+			res, err := db.GetMembersByTeam(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"), team[i])
+			if err != nil {
+				http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			results = append(results, res...)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
 func Init() {
 	http.HandleFunc("/post/performance-point", PostHandlerPerformancePoint)
+	http.HandleFunc("/post/staff-member", PostHandlerStaffMember)
 }
