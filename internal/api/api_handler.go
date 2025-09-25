@@ -54,6 +54,17 @@ func PostHandlerPerformancePoint(w http.ResponseWriter, r *http.Request) {
 	//     "identifiers": [ "chuongpt@ikameglobal.com", "tuongnm@ikameglobal.com"]
 	// }
 
+	// Set CORS headers for all requests
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+
+	// Handle preflight OPTIONS request
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	var body map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -82,12 +93,24 @@ func PostHandlerPerformancePoint(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, res)
 	}
-
 	w.Header().Set("Content-Type", "application/json")
+
 	json.NewEncoder(w).Encode(results)
 }
 
 func PostHandlerStaffMember(w http.ResponseWriter, r *http.Request) {
+
+	// Set CORS headers for all requests
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+
+	// Handle preflight OPTIONS request
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	var body map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -118,6 +141,7 @@ func PostHandlerStaffMember(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
+
 	json.NewEncoder(w).Encode(results)
 }
 
