@@ -2,6 +2,7 @@
   // 1. Lọc theo done_date
   {
     $match: {
+      assignee_id: "chuongpt@ikameglobal.com",
       done_date: {
         $gte: new Date("2025-07-01T00:00:00.000Z"),
         $lte: new Date("2025-07-30T23:59:59.000Z")
@@ -33,7 +34,7 @@
             $cond: [
               { $lt: ["$$idx", { $size: "$$arr" }] },
               { $arrayElemAt: ["$$arr", "$$idx"] },
-              { $arrayElemAt: ["$$arr", 0] }
+              "$level"
             ]
           }
         }

@@ -37,9 +37,10 @@ type PerformancePoint struct {
 	TotalCreativeProcessPoint float64   `bson:"total_creative_process_point"`
 	TotalCreativeTaskPoint    float64   `bson:"total_creative_task_point"`
 	TotalBasePoint            float64   `bson:"total_base_point"`
+	Identifier                string    `bson:"identifier"`
 }
 
-func GetPerformancePoint(uri, dbName, collName, indentifier string, startDate, endDate time.Time, isTeam bool) ([]*PerformancePoint, error) {
+func GetPerformancePoint(uri, dbName, collName, identifier string, startDate, endDate time.Time, isTeam bool) ([]*PerformancePoint, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	// defer client.Disconnect(ctx)
@@ -52,49 +53,77 @@ func GetPerformancePoint(uri, dbName, collName, indentifier string, startDate, e
 		identifierKey = "assignee_id"
 	}
 
-	// Pipeline
-	// Build aggregation pipeline
 	pipeline := mongo.Pipeline{
-		// 1. Filter by date range
-		bson.D{
-			{Key: "$match", Value: bson.D{
-				{Key: identifierKey, Value: indentifier},
+		// 1. Match theo assignee_id và done_date
+		{{
+			Key: "$match", Value: bson.D{
+				{Key: identifierKey, Value: identifier},
 				{Key: "done_date", Value: bson.D{
 					{Key: "$gte", Value: startDate},
 					{Key: "$lte", Value: endDate},
 				}},
-			}},
-		},
+			},
+		}},
 
-		// 2. Add week_start (truncate to Monday)
-		bson.D{
-			{Key: "$addFields", Value: bson.D{
+		// 2. Add week_start (truncate theo tuần, bắt đầu Monday)
+		{{
+			Key: "$addFields", Value: bson.D{
 				{Key: "week_start", Value: bson.D{
 					{Key: "$dateTrunc", Value: bson.D{
 						{Key: "date", Value: "$done_date"},
 						{Key: "unit", Value: "week"},
 						{Key: "binSize", Value: 1},
-						{Key: "timezone", Value: "UTC"},
 						{Key: "startOfWeek", Value: "monday"},
 					}},
 				}},
-			}},
-		},
+			},
+		}},
 
-		// 3. Lookup creative-tool
-		bson.D{
-			{Key: "$lookup", Value: bson.D{
+		// 3. Lookup level theo team
+		{{
+			Key: "$lookup", Value: bson.D{
+				{Key: "from", Value: "level"},
+				{Key: "localField", Value: "team"},
+				{Key: "foreignField", Value: "team"},
+				{Key: "as", Value: "level_info"},
+			},
+		}},
+		{{Key: "$unwind", Value: "$level_info"}},
+
+		// 4. Tính performance_point
+		{{
+			Key: "$addFields", Value: bson.D{
+				{Key: "performance_point", Value: bson.D{
+					{Key: "$let", Value: bson.D{
+						{Key: "vars", Value: bson.D{
+							{Key: "idx", Value: bson.D{{Key: "$subtract", Value: bson.A{"$level", 1}}}},
+							{Key: "arr", Value: "$level_info.levelPoint"},
+						}},
+						{Key: "in", Value: bson.D{
+							{Key: "$cond", Value: bson.A{
+								bson.D{{Key: "$lt", Value: bson.A{"$$idx", bson.D{{Key: "$size", Value: "$$arr"}}}}},
+								bson.D{{Key: "$arrayElemAt", Value: bson.A{"$$arr", "$$idx"}}},
+								"$level",
+							}},
+						}},
+					}},
+				}},
+			},
+		}},
+
+		// 5. Lookup creative-tool
+		{{
+			Key: "$lookup", Value: bson.D{
 				{Key: "from", Value: "creative-tool"},
 				{Key: "localField", Value: "tool"},
 				{Key: "foreignField", Value: "tool_name"},
 				{Key: "as", Value: "tool_info"},
-			}},
-		},
+			},
+		}},
 
-		// 4. Separate tool type "t" and "q"
-		bson.D{
-			{Key: "$addFields", Value: bson.D{
-				{Key: "performance_point", Value: "$level"},
+		// 6. Add tool_points_t và tool_points_q
+		{{
+			Key: "$addFields", Value: bson.D{
 				{Key: "tool_points_t", Value: bson.D{
 					{Key: "$map", Value: bson.D{
 						{Key: "input", Value: bson.D{
@@ -141,12 +170,12 @@ func GetPerformancePoint(uri, dbName, collName, indentifier string, startDate, e
 						}},
 					}},
 				}},
-			}},
-		},
+			},
+		}},
 
-		// 5. Calculate tool_factor and creative_process_point
-		bson.D{
-			{Key: "$addFields", Value: bson.D{
+		// 7. Add tool_factor và creative_process_point
+		{{
+			Key: "$addFields", Value: bson.D{
 				{Key: "tool_factor", Value: bson.D{
 					{Key: "$cond", Value: bson.D{
 						{Key: "if", Value: bson.D{{Key: "$eq", Value: bson.A{bson.D{{Key: "$size", Value: "$tool_points_t"}}, 0}}}},
@@ -181,42 +210,63 @@ func GetPerformancePoint(uri, dbName, collName, indentifier string, startDate, e
 						}},
 					}},
 				}},
-			}},
-		},
+			},
+		}},
 
-		// 6. Calculate creative_task_point
-		bson.D{
-			{Key: "$addFields", Value: bson.D{
-				{Key: "creative_task_point", Value: bson.D{{Key: "$multiply", Value: bson.A{"$performance_point", "$tool_factor"}}}},
-			}},
-		},
+		// 8. Add creative_task_point
+		{{
+			Key: "$addFields", Value: bson.D{
+				{Key: "creative_task_point", Value: bson.D{
+					{Key: "$multiply", Value: bson.A{"$performance_point", "$tool_factor"}},
+				}},
+			},
+		}},
 
-		// 7. Calculate base_point
-		bson.D{
-			{Key: "$addFields", Value: bson.D{
+		// 9. Add base_point
+		{{
+			Key: "$addFields", Value: bson.D{
 				{Key: "base_point", Value: bson.D{
 					{Key: "$add", Value: bson.A{
 						bson.D{{Key: "$subtract", Value: bson.A{"$performance_point", "$creative_task_point"}}},
 						"$creative_process_point",
 					}},
 				}},
-			}},
-		},
-		// 8. Group by week
-		bson.D{
-			{Key: "$group", Value: bson.D{
+			},
+		}},
+
+		// 10. Project
+		{{
+			Key: "$project", Value: bson.D{
+				{Key: "task_name", Value: 1},
+				{Key: "assignee_id", Value: 1},
+				{Key: "team", Value: 1},
+				{Key: "level", Value: 1},
+				{Key: "performance_point", Value: 1},
+				{Key: "tool_points_t", Value: 1},
+				{Key: "tool_points_q", Value: 1},
+				{Key: "tool_factor", Value: 1},
+				{Key: "creative_process_point", Value: 1},
+				{Key: "creative_task_point", Value: 1},
+				{Key: "base_point", Value: 1},
+				{Key: "done_date", Value: 1},
+				{Key: "week_start", Value: 1},
+			},
+		}},
+
+		// 11. Group theo tuần
+		{{
+			Key: "$group", Value: bson.D{
 				{Key: "_id", Value: "$week_start"},
 				{Key: "total_performance_point", Value: bson.D{{Key: "$sum", Value: "$performance_point"}}},
 				{Key: "total_creative_process_point", Value: bson.D{{Key: "$sum", Value: "$creative_process_point"}}},
 				{Key: "total_creative_task_point", Value: bson.D{{Key: "$sum", Value: "$creative_task_point"}}},
 				{Key: "total_base_point", Value: bson.D{{Key: "$sum", Value: "$base_point"}}},
-			}},
-		},
+				{Key: "tasks", Value: bson.D{{Key: "$push", Value: "$$ROOT"}}},
+			},
+		}},
 
-		// 9. Sort by week
-		bson.D{
-			{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}},
-		},
+		// 12. Sort
+		{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
 	}
 
 	cursor, err := collection.Aggregate(ctx, pipeline)
@@ -234,6 +284,9 @@ func GetPerformancePoint(uri, dbName, collName, indentifier string, startDate, e
 		return nil, nil
 	}
 
+	for _, r := range results {
+		r.Identifier = identifier
+	}
 	return results, nil
 }
 

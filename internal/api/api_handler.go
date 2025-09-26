@@ -85,7 +85,6 @@ func PostHandlerPerformancePoint(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("identifier count:", identifiers)
 	var results []*db.PerformancePoint
 	for _, id := range identifiers {
-
 		res, err := db.GetPerformancePoint(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), id, startTime, endTime, isTeamStr == "true")
 		if err != nil {
 			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)

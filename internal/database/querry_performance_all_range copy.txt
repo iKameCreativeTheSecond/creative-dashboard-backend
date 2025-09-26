@@ -1,8 +1,8 @@
 [
-  // 1. Filter by done_date
+  // 1. Lọc theo done_date
   {
     $match: {
-      task_name: "Bunny",
+      assignee_id: "lyth@ikameglobal.com",
       done_date: {
         $gte: new Date("2025-07-01T00:00:00.000Z"),
         $lte: new Date("2025-07-30T23:59:59.000Z")
@@ -10,7 +10,53 @@
     }
   },
 
-  // 2. Lookup creative-tool by tool
+  // 2. Tính week_start từ done_date (mỗi tuần bắt đầu từ thứ 2)
+  {
+    $addFields: {
+      week_start: {
+        $dateTrunc: {
+          date: "$done_date",
+          unit: "week",
+          binSize: 1,
+          startOfWeek: "monday"
+        }
+      }
+    }
+  },
+
+  // 3. Lookup level theo team
+  {
+    $lookup: {
+      from: "level",
+      localField: "team",
+      foreignField: "team",
+      as: "level_info"
+    }
+  },
+  { $unwind: "$level_info" },
+
+  // 4. Tính performance_point từ levelPoint
+  {
+    $addFields: {
+      performance_point: {
+        $let: {
+          vars: {
+            idx: { $subtract: ["$level", 1] },
+            arr: "$level_info.levelPoint"
+          },
+          in: {
+            $cond: [
+              { $lt: ["$$idx", { $size: "$$arr" }] },
+              { $arrayElemAt: ["$$arr", "$$idx"] },
+              "$level"
+            ]
+          }
+        }
+      }
+    }
+  },
+
+  // 5. Lookup creative-tool theo tool
   {
     $lookup: {
       from: "creative-tool",
@@ -20,10 +66,9 @@
     }
   },
 
-  // 3. Separate tool type "t" and "q"
+  // 6. Tách tool loại t và q
   {
     $addFields: {
-      performance_point: "$level",
       tool_points_t: {
         $map: {
           input: {
@@ -73,7 +118,7 @@
     }
   },
 
-  // 4. Calculate tool_factor and creative_process_point
+  // 7. Tính tool_factor và creative_process_point
   {
     $addFields: {
       tool_factor: {
@@ -109,7 +154,7 @@
     }
   },
 
-  // 5. Calculate creative_task_point
+  // 8. Tính creative_task_point
   {
     $addFields: {
       creative_task_point: {
@@ -118,7 +163,7 @@
     }
   },
 
-  // 6. Calculate base_point
+  // 9. Tính base_point
   {
     $addFields: {
       base_point: {
@@ -130,7 +175,7 @@
     }
   },
 
-  // 7. Project fields
+  // 10. Project các field cần thiết
   {
     $project: {
       task_name: 1,
@@ -144,18 +189,23 @@
       creative_process_point: 1,
       creative_task_point: 1,
       base_point: 1,
-      done_date: 1
+      done_date: 1,
+      week_start: 1
     }
   },
 
-  // 8. Group totals
+  // 11. Group theo tuần
   {
     $group: {
-      _id: null,
+      _id: "$week_start",
       total_performance_point: { $sum: "$performance_point" },
       total_creative_process_point: { $sum: "$creative_process_point" },
       total_creative_task_point: { $sum: "$creative_task_point" },
-      total_base_point: { $sum: "$base_point" }
+      total_base_point: { $sum: "$base_point" },
+      tasks: { $push: "$$ROOT" }
     }
-  }
+  },
+
+  // 12. Sort theo tuần
+  { $sort: { _id: 1 } }
 ]
