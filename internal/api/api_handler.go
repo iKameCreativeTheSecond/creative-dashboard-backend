@@ -2,11 +2,14 @@ package apihandler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	db "performance-dashboard-backend/internal/database"
 	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
 	"time"
+
+	"github.com/gorilla/sessions"
 )
 
 // CORS middleware
@@ -27,36 +30,11 @@ type Response struct {
 	Message string `json:"message"`
 }
 
-// // Root handler
-// func RootHandler(w http.ResponseWriter, r *http.Request) {
-// 	res := Response{Message: "Welcome to Go API listener!"}
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(res)
-// }
+const USER_ID = "user_id"
+const AUTH_SESSION = "auth-session"
+const TEAM_ROLE = "team_role"
 
-// // Example GET handler
-// func GetHandler(w http.ResponseWriter, r *http.Request) {
-// 	res := Response{Message: "This is a GET endpoint"}
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(res)
-// }
-
-// // Example POST handler
-// func PostHandler(w http.ResponseWriter, r *http.Request) {
-// 	var data map[string]interface{}
-// 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-// 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	res := map[string]interface{}{
-// 		"received": data,
-// 		"status":   "success",
-// 	}
-
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(res)
-// }
+var sessionStore = sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))
 
 func PostHandlerPerformancePoint(w http.ResponseWriter, r *http.Request) {
 
@@ -138,7 +116,49 @@ func PostHandlerStaffMember(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	email := r.FormValue("email")
+
+	isInDatabase, err := db.IsEmailInDatabase(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"), email)
+	if err != nil && isInDatabase {
+
+		teamRoles, _ := db.GetMemberRoles(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"), email)
+
+		session, _ := sessionStore.Get(r, AUTH_SESSION)
+		session.Values[USER_ID] = email
+		session.Values[TEAM_ROLE] = teamRoles
+		session.Save(r, w)
+
+		w.Write([]byte("Login success"))
+	} else {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+	}
+}
+
+func GetTeamRoles(r *http.Request) ([]db.TeamRole, error) {
+	session, err := sessionStore.Get(r, AUTH_SESSION)
+	if err != nil {
+		return nil, err
+	}
+	teamRoles, ok := session.Values[TEAM_ROLE].([]db.TeamRole)
+	if !ok {
+		return nil, errors.New("err: invalid team roles")
+	}
+	return teamRoles, nil
+}
+
+func IsAuthenticated(r *http.Request) bool {
+	session, err := sessionStore.Get(r, AUTH_SESSION)
+	if err != nil {
+		return false
+	}
+	_, ok := session.Values[USER_ID].(string)
+	return ok
+}
+
 func Init() {
+	http.Handle("/login", CORSMiddleware(http.HandlerFunc(LoginHandler)))
 	http.Handle("/post/performance-point", CORSMiddleware(http.HandlerFunc(PostHandlerPerformancePoint)))
 	http.Handle("/post/staff-member", CORSMiddleware(http.HandlerFunc(PostHandlerStaffMember)))
 	// http.Handle("/", CORSMiddleware(http.HandlerFunc(RootHandler)))

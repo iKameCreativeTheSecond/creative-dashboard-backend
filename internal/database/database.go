@@ -40,6 +40,11 @@ type PerformancePoint struct {
 	Identifier                string    `bson:"identifier"`
 }
 
+type TeamRole struct {
+	Team string `bson:"team"`
+	Role string `bson:"role"`
+}
+
 func GetPerformancePoint(uri, dbName, collName, identifier string, startDate, endDate time.Time, isTeam bool) ([]*PerformancePoint, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -334,5 +339,48 @@ func GetMembersByTeam(uri, dbName, collName string, team string) ([]*collectionm
 		return nil, nil
 	}
 
+	return results, nil
+}
+
+func IsEmailInDatabase(uri, dbName, collName, email string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collName)
+	filter := bson.M{"email": email}
+	count, err := collection.CountDocuments(ctx, filter)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func GetMemberRoles(uri, dbName, collName, email string) ([]*TeamRole, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collName)
+
+	pipeline := mongo.Pipeline{
+		{{
+			Key: "$match", Value: bson.D{{Key: "email", Value: email}},
+		}},
+		{{
+			Key: "$project", Value: bson.D{
+				{Key: "role", Value: 1},
+				{Key: "team", Value: 1},
+				{Key: "_id", Value: 0},
+			},
+		}},
+	}
+
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []*TeamRole
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
 	return results, nil
 }
