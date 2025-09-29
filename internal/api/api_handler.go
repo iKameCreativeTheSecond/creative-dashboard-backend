@@ -158,7 +158,6 @@ func PostHandlerStaffMember(w http.ResponseWriter, r *http.Request) {
 		log.Println("Results length:", len(results))
 
 		if len(results) > 0 {
-			//log.Printf("User %s with roles %+v requested teams %+v, returning %d members", email, teamRoles, teams, len(results))
 			if !isAdmin && email != "" {
 				// if you are manager of a specific team, return all members in your teams
 				// if you are not manager of that team, return only your own info
@@ -196,8 +195,6 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	isInDatabase, err := db.IsEmailInDatabase(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"), email)
 
-	log.Printf("Login attempt for email: %s Is in db %s", email, isInDatabase)
-
 	if err == nil && isInDatabase {
 
 		teamRoles, _ := db.GetMemberRoles(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"), email)
@@ -211,12 +208,6 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 			TeamRole: teamRoles,
 			Email:    email,
 		}
-
-		for _, role := range teamRoles {
-			log.Printf("Role for %s: %+v", email, role)
-		}
-
-		log.Printf("Generated token for %s: %s", email, token)
 
 		// Return token
 		w.Header().Set("Content-Type", "application/json")
