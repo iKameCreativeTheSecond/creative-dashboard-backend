@@ -53,3 +53,18 @@ func DeleteWeeklyTarget(client *mongo.Client, dbName, collectionName string, tea
 	_, err := collection.DeleteOne(ctx, bson.M{"team": team, "date_from": dateFrom, "date_to": dateTo})
 	return err
 }
+
+func GetAllWeeklyTargets(client *mongo.Client, dbName, collectionName string) ([]WeeklyTarget, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collectionName)
+	cursor, err := collection.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	var targets []WeeklyTarget
+	if err = cursor.All(ctx, &targets); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}

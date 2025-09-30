@@ -603,6 +603,197 @@ func HandleDeleteCreativeTool(w http.ResponseWriter, r *http.Request) {
 /// =========== End Creative Tool Handler =================
 /// =======================================================
 
+// / =======================================================
+// / ============ Level To Point Handler ===================
+
+func HandleGetAllLevel(w http.ResponseWriter, r *http.Request) {
+
+	// TOOD : implement role-based access control
+	res, err := collectionmodels.GetAllLevels(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_LEVEL"))
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
+func HandleUpdateLevel(w http.ResponseWriter, r *http.Request) {
+	// TOOD : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	pointsInterface := body["Point"].([]interface{})
+	points := make([]int, len(pointsInterface))
+	for i, v := range pointsInterface {
+		points[i] = int(v.(float64))
+	}
+	level := &collectionmodels.Level{
+		Team:       body["Team"].(string),
+		LevelPoint: points,
+	}
+	err := collectionmodels.UpdateLevelPointsForTeam(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_LEVEL"), level)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func HandleAddNewLevel(w http.ResponseWriter, r *http.Request) {
+	// TOOD : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	pointsInterface := body["Point"].([]interface{})
+	points := make([]int, len(pointsInterface))
+	for i, v := range pointsInterface {
+		points[i] = int(v.(float64))
+	}
+	level := &collectionmodels.Level{
+		Team:       body["Team"].(string),
+		LevelPoint: points,
+	}
+	err := collectionmodels.AddNewLevelForTeam(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_LEVEL"), level)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "New level added successfully"}`))
+}
+
+func HandleDeleteLevel(w http.ResponseWriter, r *http.Request) {
+	// TOOD : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	team := body["Team"].(string)
+
+	err := collectionmodels.DeleteLevelForTeam(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_LEVEL"), team)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Level deleted successfully"}`))
+}
+
+// / =========== End Level To Point Handler ================
+// / =======================================================
+
+// / =======================================================
+// / ============= Weekly Target Handler ===================
+
+func HandleGetWeeklyTarget(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	team := r.URL.Query().Get("team")
+	if team == "" {
+		http.Error(w, "Missing team parameter", http.StatusBadRequest)
+		return
+	}
+	target, err := collectionmodels.GetAllWeeklyTargets(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_TARGET"))
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(target)
+}
+
+func HandleUpdateWeeklyTarget(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	team := body["Team"].(string)
+	point := body["Point"].(float64)
+	dateFromStr := body["DateFrom"].(string)
+	dateToStr := body["DateTo"].(string)
+	target := &collectionmodels.WeeklyTarget{
+		Team:  team,
+		Point: int(point),
+		DateFrom: func() time.Time {
+			t, _ := time.Parse(time.RFC3339, dateFromStr)
+			return t
+		}(),
+		DateTo: func() time.Time {
+			t, _ := time.Parse(time.RFC3339, dateToStr)
+			return t
+		}(),
+	}
+	err := collectionmodels.UpdateWeeklyTargetByTeam(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_TARGET"), target)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Weekly target updated successfully"}`))
+}
+
+func HandleAddNewWeeklyTarget(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	team := body["Team"].(string)
+	point := body["Point"].(float64)
+	dateFromStr := body["DateFrom"].(string)
+	dateToStr := body["DateTo"].(string)
+	target := &collectionmodels.WeeklyTarget{
+		Team:  team,
+		Point: int(point),
+		DateFrom: func() time.Time {
+			t, _ := time.Parse(time.RFC3339, dateFromStr)
+			return t
+		}(),
+		DateTo: func() time.Time {
+			t, _ := time.Parse(time.RFC3339, dateToStr)
+			return t
+		}(),
+	}
+	err := collectionmodels.InsertWeeklyTarget(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_TARGET"), target)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "New weekly target added successfully"}`))
+}
+
+func HandleDeleteWeeklyTarget(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	team := body["Team"].(string)
+	dateFromStr := body["DateFrom"].(string)
+	dateToStr := body["DateTo"].(string)
+	dateFrom, _ := time.Parse(time.RFC3339, dateFromStr)
+	dateTo, _ := time.Parse(time.RFC3339, dateToStr)
+	err := collectionmodels.DeleteWeeklyTarget(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_TARGET"), team, dateFrom, dateTo)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Weekly target deleted successfully"}`))
+}
+
+// / ============ End Weekly Target Handler =================
+// / =======================================================
+
 func Init() {
 	http.Handle("/login", CORSMiddleware(http.HandlerFunc(LoginHandler)))
 
@@ -625,6 +816,16 @@ func Init() {
 	http.Handle("/post/update-creative-tool", CORSMiddleware(http.HandlerFunc(HandleUpdateCreativeTool)))
 	http.Handle("/post/add-new-creative-tool", CORSMiddleware(http.HandlerFunc(HandleAddNewCreativeTool)))
 	http.Handle("/post/delete-creative-tool", CORSMiddleware(http.HandlerFunc(HandleDeleteCreativeTool)))
+
+	http.Handle("/get/levels", CORSMiddleware(http.HandlerFunc(HandleGetAllLevel)))
+	http.Handle("/post/update-level", CORSMiddleware(http.HandlerFunc(HandleUpdateLevel)))
+	http.Handle("/post/add-new-level", CORSMiddleware(http.HandlerFunc(HandleAddNewLevel)))
+	http.Handle("/post/delete-level", CORSMiddleware(http.HandlerFunc(HandleDeleteLevel)))
+
+	http.Handle("/get/weekly-target", CORSMiddleware(http.HandlerFunc(HandleGetWeeklyTarget)))
+	http.Handle("/post/update-weekly-target", CORSMiddleware(http.HandlerFunc(HandleUpdateWeeklyTarget)))
+	http.Handle("/post/add-new-weekly-target", CORSMiddleware(http.HandlerFunc(HandleAddNewWeeklyTarget)))
+	http.Handle("/post/delete-weekly-target", CORSMiddleware(http.HandlerFunc(HandleDeleteWeeklyTarget)))
 
 	go ClearSessionMapSchedule()
 }
