@@ -31,6 +31,11 @@ func ConnectMongoDB() error {
 	return nil
 }
 
+type TeamWeeklyTarget struct {
+	Team         string `bson:"team"`
+	WeeklyTarget int32  `bson:"point"`
+}
+
 type PerformancePoint struct {
 	StartWeek                 time.Time `bson:"_id"`
 	TotalPerformancePoint     float64   `bson:"total_performance_point"`
@@ -383,4 +388,67 @@ func GetMemberRoles(uri, dbName, collName, email string) ([]*TeamRole, error) {
 		return nil, err
 	}
 	return results, nil
+}
+
+func GetAllTeams(uri, dbName, collName string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collName)
+	pipeline := mongo.Pipeline{
+		{{
+			Key: "$group", Value: bson.D{
+				{Key: "_id", Value: "$team"},
+			},
+		}},
+	}
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []string
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func GetTeamWeeklyTarget(uri, dbName, collName, team string) (*TeamWeeklyTarget, error) {
+
+	log.Println("Fetching team weekly target for team:", team)
+	log.Println("Using URI:", uri)
+	log.Println("Using DB Name:", dbName)
+	log.Println("Using Collection Name:", collName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collName)
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{
+			{Key: "date_from", Value: bson.D{{Key: "$lte", Value: time.Now()}}},
+			{Key: "date_to", Value: bson.D{{Key: "$gte", Value: time.Now()}}},
+			{Key: "team", Value: team},
+		}}},
+		bson.D{{Key: "$project", Value: bson.D{
+			{Key: "_id", Value: 0},
+			{Key: "team", Value: 1},
+			{Key: "point", Value: 1},
+		}}},
+	}
+
+	var result TeamWeeklyTarget
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&result); err != nil {
+			return nil, err
+		}
+		return &result, nil
+	}
+	return nil, nil
 }

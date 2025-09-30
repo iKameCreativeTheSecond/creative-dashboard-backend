@@ -78,11 +78,6 @@ func PostHandlerPerformancePoint(w http.ResponseWriter, r *http.Request) {
 }
 
 func PostHandlerStaffMember(w http.ResponseWriter, r *http.Request) {
-	// Handle preflight OPTIONS request
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
 
 	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
 	if !ok || teamRoles == nil {
@@ -241,10 +236,117 @@ func GetEmailFromToken(token string) (string, bool) {
 	return session.Email, true
 }
 
+func HandleLastWeekTeamPerformance(w http.ResponseWriter, r *http.Request) {
+	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
+	if !ok || teamRoles == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		log.Println("Unauthorized access attempt")
+		return
+	}
+	teams := []string{}
+	for _, role := range teamRoles {
+		if !contains(teams, role.Team) {
+			teams = append(teams, role.Team)
+		}
+	}
+
+	isAdmin := false
+	for _, role := range teamRoles {
+		if role.Role == "Admin" {
+			isAdmin = true
+			break
+		}
+	}
+
+	if isAdmin {
+		var err error
+		teams, err = db.GetAllTeams(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"))
+		if err != nil {
+			log.Println("Error getting all teams:", err)
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	log.Println("Fetching last week's performance for teams:", teams)
+
+	thisMonday := time.Now().AddDate(0, 0, -int(time.Now().Weekday())+1)
+	lastMonday := thisMonday.AddDate(0, 0, -7)
+	var results []*db.PerformancePoint
+	if len(teams) > 0 {
+		for _, team := range teams {
+			res, err := db.GetPerformancePoint(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), team, lastMonday, thisMonday, true)
+			if err != nil {
+				http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+				log.Println("Database error:", err)
+				return
+			}
+			results = append(results, res...)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+func HandleTeamWeeklyTarget(w http.ResponseWriter, r *http.Request) {
+	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
+	if !ok || teamRoles == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		log.Println("Unauthorized access attempt")
+		return
+	}
+
+	teams := []string{}
+	for _, role := range teamRoles {
+		if !contains(teams, role.Team) {
+			teams = append(teams, role.Team)
+		}
+	}
+
+	isAdmin := false
+	for _, role := range teamRoles {
+		if role.Role == "Admin" {
+			isAdmin = true
+			break
+		}
+	}
+
+	if isAdmin {
+		var err error
+		teams, err = db.GetAllTeams(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"))
+		if err != nil {
+			log.Println("Error getting all teams:", err)
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	var results []*db.TeamWeeklyTarget
+	if len(teams) > 0 {
+		for _, team := range teams {
+			res, err := db.GetTeamWeeklyTarget(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEAM_WEEKLY_TARGET"), team)
+			if err != nil {
+				http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+				log.Println("Database error:", err)
+				return
+			}
+			results = append(results, res)
+		}
+	}
+	log.Println("Returning team weekly targets for teams:", teams)
+	for _, r := range results {
+		// log.Printf("Team: %s, Point: %d, DateFrom: %s, DateTo: %s\n", r.Team, r.Point, r.DateFrom.Format("2006-01-02"), r.DateTo.Format("2006-01-02"))
+		log.Printf("Team: %s, Point: %f\n", r.Team, r.WeeklyTarget)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
 func Init() {
 	http.Handle("/login", CORSMiddleware(http.HandlerFunc(LoginHandler)))
 	http.Handle("/post/performance-point", CORSMiddleware(http.HandlerFunc(PostHandlerPerformancePoint)))
 	http.Handle("/post/staff-member", CORSMiddleware(http.HandlerFunc(PostHandlerStaffMember)))
-
+	http.Handle("/get/last-week-team-performance", CORSMiddleware(http.HandlerFunc(HandleLastWeekTeamPerformance)))
+	http.Handle("/get/team-weekly-target", CORSMiddleware(http.HandlerFunc(HandleTeamWeeklyTarget)))
 	go ClearSessionMapSchedule()
 }
