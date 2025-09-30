@@ -22,7 +22,7 @@ type WeeklyOrder struct {
 	Video     int                `bson:"video"`
 }
 
-func InsertWeeklyOrder(client mongo.Client, uri, dbName, collName string, order *WeeklyOrder) error {
+func InsertWeeklyOrder(client *mongo.Client, dbName, collName string, order *WeeklyOrder) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collName)
@@ -30,7 +30,7 @@ func InsertWeeklyOrder(client mongo.Client, uri, dbName, collName string, order 
 	return err
 }
 
-func UpdateWeeklyOrder(client mongo.Client, uri, dbName, collName string, order *WeeklyOrder) error {
+func UpdateWeeklyOrder(client *mongo.Client, dbName, collName string, order *WeeklyOrder) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collName)
@@ -39,7 +39,7 @@ func UpdateWeeklyOrder(client mongo.Client, uri, dbName, collName string, order 
 	return err
 }
 
-func GetWeeklyOrders(client mongo.Client, uri, dbName, collName string, startWeek []time.Time, project []string) ([]*WeeklyOrder, error) {
+func GetWeeklyOrders(client *mongo.Client, dbName, collName string, startWeek []time.Time, project []string) ([]*WeeklyOrder, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collName)
@@ -60,10 +60,26 @@ func GetWeeklyOrders(client mongo.Client, uri, dbName, collName string, startWee
 	return results, nil
 }
 
-func DeleteWeeklyOrder(client mongo.Client, uri, dbName, collName string, startWeek time.Time, project string) error {
+func DeleteWeeklyOrder(client *mongo.Client, dbName, collName string, startWeek time.Time, project string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collName)
 	_, err := collection.DeleteOne(ctx, bson.M{"start_week": startWeek, "project": project})
 	return err
+}
+
+func GetAllWeeklyOrders(client *mongo.Client, dbName, collName string) ([]*WeeklyOrder, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collName)
+	cursor, err := collection.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var results []*WeeklyOrder
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+	return results, nil
 }

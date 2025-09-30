@@ -692,11 +692,6 @@ func HandleDeleteLevel(w http.ResponseWriter, r *http.Request) {
 
 func HandleGetWeeklyTarget(w http.ResponseWriter, r *http.Request) {
 	// TODO : implement role-based access control
-	team := r.URL.Query().Get("team")
-	if team == "" {
-		http.Error(w, "Missing team parameter", http.StatusBadRequest)
-		return
-	}
 	target, err := collectionmodels.GetAllWeeklyTargets(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_TARGET"))
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
@@ -794,6 +789,104 @@ func HandleDeleteWeeklyTarget(w http.ResponseWriter, r *http.Request) {
 // / ============ End Weekly Target Handler =================
 // / =======================================================
 
+/// ============== Weekly Order Handler ===================
+
+func HandleGetWeeklyOrder(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+
+	res, err := collectionmodels.GetAllWeeklyOrders(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"))
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
+func HandleUpdateWeeklyOrder(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	startWeekStr := body["StartWeek"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+
+	order := &collectionmodels.WeeklyOrder{
+		StartWeek: startWeek,
+		Goal:      body["Goal"].(string),
+		Strategy:  body["Strategy"].(string),
+		Project:   body["Project"].(string),
+		CPP:       body["CPP"].(int),
+		Icon:      body["Icon"].(int),
+		Banner:    body["Banner"].(int),
+		Video:     body["Video"].(int),
+		PLA:       body["PLA"].(int),
+	}
+
+	err := collectionmodels.UpdateWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), order)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Weekly order updated successfully"}`))
+}
+
+func HandleAddNewWeeklyOrder(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	startWeekStr := body["StartWeek"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+	order := &collectionmodels.WeeklyOrder{
+		StartWeek: startWeek,
+		Goal:      body["Goal"].(string),
+		Strategy:  body["Strategy"].(string),
+		Project:   body["Project"].(string),
+		CPP:       body["CPP"].(int),
+		Icon:      body["Icon"].(int),
+		Banner:    body["Banner"].(int),
+		Video:     body["Video"].(int),
+		PLA:       body["PLA"].(int),
+	}
+	err := collectionmodels.InsertWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), order)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Weekly order added successfully"}`))
+}
+
+func HandleDeleteWeeklyOrder(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	startWeekStr := body["StartWeek"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+	project := body["Project"].(string)
+
+	err := collectionmodels.DeleteWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), startWeek, project)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Weekly order deleted successfully"}`))
+}
+
+/// =======================================================
+
 func Init() {
 	http.Handle("/login", CORSMiddleware(http.HandlerFunc(LoginHandler)))
 
@@ -826,6 +919,11 @@ func Init() {
 	http.Handle("/post/update-weekly-target", CORSMiddleware(http.HandlerFunc(HandleUpdateWeeklyTarget)))
 	http.Handle("/post/add-new-weekly-target", CORSMiddleware(http.HandlerFunc(HandleAddNewWeeklyTarget)))
 	http.Handle("/post/delete-weekly-target", CORSMiddleware(http.HandlerFunc(HandleDeleteWeeklyTarget)))
+
+	http.Handle("/get/weekly-order", CORSMiddleware(http.HandlerFunc(HandleGetWeeklyOrder)))
+	http.Handle("/post/update-weekly-order", CORSMiddleware(http.HandlerFunc(HandleUpdateWeeklyOrder)))
+	http.Handle("/post/add-new-weekly-order", CORSMiddleware(http.HandlerFunc(HandleAddNewWeeklyOrder)))
+	http.Handle("/post/delete-weekly-order", CORSMiddleware(http.HandlerFunc(HandleDeleteWeeklyOrder)))
 
 	go ClearSessionMapSchedule()
 }
