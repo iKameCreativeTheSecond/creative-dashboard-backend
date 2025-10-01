@@ -26,14 +26,14 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 	collection := client.Database(dbName).Collection(collectionName)
 
 	pipeline := mongo.Pipeline{
-		// 1. Filter by date range
+		// 1. Filter weekly orders by date range (ví dụ tháng 9/2025)
 		{{Key: "$match", Value: bson.D{
 			{Key: "start_week", Value: bson.D{
 				{Key: "$gte", Value: startTime},
 				{Key: "$lte", Value: endTime},
 			}},
 		}}},
-		// 2. Build orders array
+		// 2. Build orders
 		{{Key: "$project", Value: bson.D{
 			{Key: "project", Value: 1},
 			{Key: "start_week", Value: 1},
@@ -45,12 +45,13 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 		}}},
 		// 3. Unwind orders
 		{{Key: "$unwind", Value: "$orders"}},
-		// 4. Lookup completed-task
+		// 4. Lookup completed-task (theo project, team, done_date thuộc tuần)
 		{{Key: "$lookup", Value: bson.D{
 			{Key: "from", Value: "completed-task"},
 			{Key: "let", Value: bson.D{
 				{Key: "proj", Value: "$project"},
 				{Key: "team", Value: "$orders.team"},
+				{Key: "weekStart", Value: "$start_week"},
 			}},
 			{Key: "pipeline", Value: mongo.Pipeline{
 				{{Key: "$match", Value: bson.D{
@@ -58,6 +59,16 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 						{Key: "$and", Value: bson.A{
 							bson.D{{Key: "$eq", Value: bson.A{"$project", "$$proj"}}},
 							bson.D{{Key: "$eq", Value: bson.A{"$team", "$$team"}}},
+							// Lọc theo tuần
+							bson.D{{Key: "$gte", Value: bson.A{"$done_date", "$$weekStart"}}},
+							bson.D{{Key: "$lt", Value: bson.A{
+								"$done_date",
+								bson.D{{Key: "$dateAdd", Value: bson.D{
+									{Key: "startDate", Value: "$$weekStart"},
+									{Key: "unit", Value: "day"},
+									{Key: "amount", Value: 7},
+								}}},
+							}}},
 						}},
 					}},
 				}}},
@@ -68,7 +79,7 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 			}},
 			{Key: "as", Value: "completed"},
 		}}},
-		// 5. Lookup fallback from project-details
+		// 5. Lookup fallback project-details
 		{{Key: "$lookup", Value: bson.D{
 			{Key: "from", Value: "project-details"},
 			{Key: "let", Value: bson.D{
@@ -77,26 +88,15 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 			}},
 			{Key: "pipeline", Value: mongo.Pipeline{
 				{{Key: "$match", Value: bson.D{
-					{Key: "$expr", Value: bson.D{
-						{Key: "$eq", Value: bson.A{"$project", "$$proj"}},
-					}},
+					{Key: "$expr", Value: bson.D{{Key: "$eq", Value: bson.A{"$project", "$$proj"}}}},
 				}}},
 				{{Key: "$project", Value: bson.D{
 					{Key: "assignee", Value: bson.D{
 						{Key: "$switch", Value: bson.D{
 							{Key: "branches", Value: bson.A{
-								bson.D{
-									{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "Art Creative"}}}},
-									{Key: "then", Value: "$art"},
-								},
-								bson.D{
-									{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "Video Creative"}}}},
-									{Key: "then", Value: "$video"},
-								},
-								bson.D{
-									{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "PLA Creative"}}}},
-									{Key: "then", Value: "$pla"},
-								},
+								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "Art Creative"}}}}, {Key: "then", Value: "$art"}},
+								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "Video Creative"}}}}, {Key: "then", Value: "$video"}},
+								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "PLA Creative"}}}}, {Key: "then", Value: "$pla"}},
 							}},
 							{Key: "default", Value: nil},
 						}},
@@ -105,7 +105,7 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 			}},
 			{Key: "as", Value: "fallback"},
 		}}},
-		// 6. Add completed_count + assignees (fallback if empty)
+		// 6. Add completed_count + assignees (fallback nếu rỗng)
 		{{Key: "$addFields", Value: bson.D{
 			{Key: "completed_count", Value: bson.D{{Key: "$sum", Value: "$completed.completed_count"}}},
 			{Key: "assignees", Value: bson.D{
