@@ -887,6 +887,35 @@ func HandleDeleteWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 
 /// =======================================================
 
+/// ========================================================
+/// =========== Project Issues Handler =====================
+
+func HandlePostProjectIssues(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	startWeekStr := body["StartDate"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+	endWeekStr := body["EndDate"].(string)
+	endWeek, _ := time.Parse(time.RFC3339, endWeekStr)
+
+	issues, err := collectionmodels.GetProjectIssues(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), startWeek, endWeek)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(issues)
+}
+
+/// =========== End Project Issues Handler =================
+/// ========================================================
+
 func Init() {
 	http.Handle("/login", CORSMiddleware(http.HandlerFunc(LoginHandler)))
 
@@ -924,6 +953,8 @@ func Init() {
 	http.Handle("/post/update-weekly-order", CORSMiddleware(http.HandlerFunc(HandleUpdateWeeklyOrder)))
 	http.Handle("/post/add-new-weekly-order", CORSMiddleware(http.HandlerFunc(HandleAddNewWeeklyOrder)))
 	http.Handle("/post/delete-weekly-order", CORSMiddleware(http.HandlerFunc(HandleDeleteWeeklyOrder)))
+
+	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
 
 	go ClearSessionMapSchedule()
 }
