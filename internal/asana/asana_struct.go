@@ -16,8 +16,9 @@ type Task struct {
 }
 
 type Assignee struct {
-	Gid  string `json:"gid"`
-	Name string `json:"name"`
+	Gid   string `json:"gid"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 type CustomField struct {
