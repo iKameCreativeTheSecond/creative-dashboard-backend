@@ -2,8 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
-	"performance-dashboard-backend/internal/asana"
 	db "performance-dashboard-backend/internal/database"
 
 	"github.com/joho/godotenv"
@@ -25,11 +23,9 @@ func ConnectDatabase() {
 
 func main() {
 	LoadEnv()
-	// ConnectDatabase()
+	ConnectDatabase()
 
-	// FetchAsanaTasks()
-	asana.FetchAsanaTasksTeamPlayable("PLA", os.Getenv("ASANA_PROJECT_ID_PLA"))
-
+	// asana.SyncronizeWeeklyTasks()
 	// api.Init()
 	// log.Fatal(http.ListenAndServe(":"+os.Getenv("SERVER_PORT"), nil))
 }

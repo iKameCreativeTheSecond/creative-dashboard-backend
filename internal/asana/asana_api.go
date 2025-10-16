@@ -12,7 +12,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"go.mongodb.org/mongo-driver/mongo"
+
+	db "performance-dashboard-backend/internal/database"
 )
 
 func FetchTasks(token string, projectID string) ([]Task, error) {
@@ -92,10 +95,10 @@ func FetchAsanaTasksTeamPlayable(team string, projectID string) []*collectionmod
 		var level int
 		var projectName string
 		for _, field := range task.CustomFields {
-			if field.Name == "Tool/CTST PLA" {
+			if field.Name == "Tool/CTST PLA" || field.Name == "Tool/CTST Video" || field.Name == "Tool/CTST Art" || field.Name == "Tool/CTST Concept" {
 				toolIndexes = GetListToolAsIndexes(field.DisplayValue)
 			}
-			if field.Name == "PLA Difficult" {
+			if field.Name == "PLA Difficult" || field.Name == "Art point" || field.Name == "Video Difficult" || field.Name == "Concept Difficult" {
 				if lvl, err := strconv.Atoi(field.DisplayValue); err == nil {
 					level = lvl
 				}
@@ -104,6 +107,15 @@ func FetchAsanaTasksTeamPlayable(team string, projectID string) []*collectionmod
 				projectName = field.DisplayValue
 			}
 		}
+
+		if level <= 1 {
+			continue
+		}
+
+		if toolIndexes == nil {
+			toolIndexes = []int{}
+		}
+
 		completedTask := &collectionmodels.CompletedTask{
 			TaskID:     task.Gid,
 			DoneDate:   thisMondayAtNine,
@@ -119,7 +131,7 @@ func FetchAsanaTasksTeamPlayable(team string, projectID string) []*collectionmod
 		// 	completedTask.TaskID, completedTask.TaskName, completedTask.AssigneeID, completedTask.Team,
 		// 	completedTask.Tool, completedTask.Level, completedTask.Project, completedTask.DoneDate.Format("2006-01-02"))
 
-		fmt.Print("ID ", completedTask.TaskID, " | Name: ", completedTask.TaskName, " | Assignee: ", completedTask.AssigneeID, " | Tool: ", completedTask.Tool, " | Level: ", completedTask.Level, " | Project: ", completedTask.Project, " | DoneDate: ", completedTask.DoneDate.Format("2006-01-02"), "\n")
+		//fmt.Print("ID ", completedTask.TaskID, " | Name: ", completedTask.TaskName, " | Assignee: ", completedTask.AssigneeID, " | Tool: ", completedTask.Tool, " | Level: ", completedTask.Level, " | Project: ", completedTask.Project, " | DoneDate: ", completedTask.DoneDate.Format("2006-01-02"), "\n")
 
 		completedTasks = append(completedTasks, completedTask)
 	}
@@ -138,4 +150,32 @@ func GetListToolAsIndexes(s string) []int {
 		}
 	}
 	return numbers
+}
+
+// schedule to run every Monday at 11:59 AM
+// Implementation of scheduling logic goes here
+func ScheduleWeeklyTaskSync() {
+	c := cron.New()
+	c.AddFunc("59 11 * * 1", SyncronizeWeeklyTasks)
+	c.Start()
+}
+
+func SyncronizeWeeklyTasks() {
+	plaCompltedTasks := FetchAsanaTasksTeamPlayable("PLA", os.Getenv("ASANA_PROJECT_ID_PLA"))
+	if len(plaCompltedTasks) > 0 {
+
+		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), plaCompltedTasks)
+	}
+	videoCompletedTasks := FetchAsanaTasksTeamPlayable("Video", os.Getenv("ASANA_PROJECT_ID_VIDEO"))
+	if len(videoCompletedTasks) > 0 {
+		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), videoCompletedTasks)
+	}
+	artCompletedTasks := FetchAsanaTasksTeamPlayable("Art", os.Getenv("ASANA_PROJECT_ID_ART"))
+	if len(artCompletedTasks) > 0 {
+		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), artCompletedTasks)
+	}
+	conceptCompletedTasks := FetchAsanaTasksTeamPlayable("Concept", os.Getenv("ASANA_PROJECT_ID_CONCEPT"))
+	if len(conceptCompletedTasks) > 0 {
+		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), conceptCompletedTasks)
+	}
 }

@@ -32,6 +32,18 @@ type CompletedTask struct {
 //	}
 //
 
+func InsertCompletedTaskToDataBase(client *mongo.Client, dbName, collectionName string, tasks []*CompletedTask) error {
+	collection := client.Database(dbName).Collection(collectionName)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var docs []interface{}
+	for _, task := range tasks {
+		docs = append(docs, task)
+	}
+	_, err := collection.InsertMany(ctx, docs)
+	return err
+}
+
 func GetCompletedTasksByDateRange(client *mongo.Client, dbName, collectionName string, isTeam bool, identifier string, startDate, endDate time.Time) ([]CompletedTask, error) {
 	collection := client.Database(dbName).Collection(collectionName)
 
