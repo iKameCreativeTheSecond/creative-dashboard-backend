@@ -2,6 +2,9 @@ package main
 
 import (
 	"log"
+	"net/http"
+	"os"
+	api "performance-dashboard-backend/internal/api"
 	db "performance-dashboard-backend/internal/database"
 
 	"github.com/joho/godotenv"
@@ -26,6 +29,6 @@ func main() {
 	ConnectDatabase()
 
 	// asana.SyncronizeWeeklyTasks()
-	// api.Init()
-	// log.Fatal(http.ListenAndServe(":"+os.Getenv("SERVER_PORT"), nil))
+	api.Init()
+	log.Fatal(http.ListenAndServe(":"+os.Getenv("SERVER_PORT"), nil))
 }

@@ -652,7 +652,6 @@ func GetPerformancePointTotal(uri, dbName, collName, identifier string, startDat
 
 func GetPerformancePoints(client *mongo.Client, dbName, collectionName string, identifier string, startDate, endDate time.Time, isTeam, isWeekly bool) ([]PerformancePointTotalWithTime, error) {
 
-	log.Println("GetPerformancePoints", isTeam, isWeekly)
 	// Slide the startDate to to the EndDate using Monday
 	level, err := collectionmodels.GetAllLevels(client, dbName, os.Getenv("MONGODB_COLLECTION_LEVEL"))
 	if err != nil {
