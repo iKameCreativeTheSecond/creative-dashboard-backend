@@ -2,7 +2,6 @@ package db_handler
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
@@ -712,7 +711,6 @@ func GetPerformancePointTotals(identifier string, tasks []collectionmodels.Compl
 	for _, task := range tasks {
 		var TaskPoint = GetPointByLevel(level, task.Team, task.Level)
 		factor, sum := GetCreativeTaskFactor(toolList, task.Tool, task.Level, task.Team)
-		fmt.Printf("Task: %s, Level: %d, Team: %s, TaskPoint: %d, Factor: %.4f, Sum: %.4f\n", task.TaskName, task.Level, task.Team, TaskPoint, factor, sum)
 		var CreativeTaskPoint = float64(TaskPoint) * factor
 		var CreativeProcessPoint = sum
 		var BasePoint = float64(TaskPoint) - CreativeTaskPoint
@@ -727,7 +725,6 @@ func GetPerformancePointTotals(identifier string, tasks []collectionmodels.Compl
 	}
 
 	performancePointTotal.Identifier = identifier
-	fmt.Printf("PerformancePointTotal for %s: %+v\n", identifier, performancePointTotal)
 	return performancePointTotal
 }
 

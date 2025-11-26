@@ -152,30 +152,35 @@ func GetListToolAsIndexes(s string) []int {
 	return numbers
 }
 
-// schedule to run every Monday at 11:59 AM
+// schedule to run every Wednesday at 11:38 AM
 // Implementation of scheduling logic goes here
 func ScheduleWeeklyTaskSync() {
 	c := cron.New()
-	c.AddFunc("59 11 * * 1", SyncronizeWeeklyTasks)
+	c.AddFunc("47 11 * * 3", SyncronizeWeeklyTasks)
 	c.Start()
 }
 
 func SyncronizeWeeklyTasks() {
+	fmt.Println("Starting weekly Asana task synchronization...")
 	plaCompltedTasks := FetchAsanaTasksTeamPlayable("PLA", os.Getenv("ASANA_PROJECT_ID_PLA"))
+	fmt.Printf("Inserting %d PLA completed tasks into the database...\n", len(plaCompltedTasks))
 	if len(plaCompltedTasks) > 0 {
-
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), plaCompltedTasks)
 	}
 	videoCompletedTasks := FetchAsanaTasksTeamPlayable("Video", os.Getenv("ASANA_PROJECT_ID_VIDEO"))
+	fmt.Printf("Inserting %d Video completed tasks into the database...\n", len(videoCompletedTasks))
 	if len(videoCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), videoCompletedTasks)
 	}
 	artCompletedTasks := FetchAsanaTasksTeamPlayable("Art", os.Getenv("ASANA_PROJECT_ID_ART"))
+	fmt.Printf("Inserting %d Art completed tasks into the database...\n", len(artCompletedTasks))
 	if len(artCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), artCompletedTasks)
 	}
 	conceptCompletedTasks := FetchAsanaTasksTeamPlayable("Concept", os.Getenv("ASANA_PROJECT_ID_CONCEPT"))
+	fmt.Printf("Inserting %d Concept completed tasks into the database...\n", len(conceptCompletedTasks))
 	if len(conceptCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), conceptCompletedTasks)
 	}
+	fmt.Println("Weekly Asana task synchronization completed.")
 }
