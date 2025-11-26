@@ -18,6 +18,11 @@ This is a Go (Golang) backend project scaffolded with a standard structure.
    ```sh
    go run ./cmd
    ```
+4. For deployment build and run
+    ```sh
+   go build -tags netgo -ldflags "-s -w" -o main ./cmd
+   ./main
+   ```
 
 ## Project Status
 - [ ] Initial scaffolding
