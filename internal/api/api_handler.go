@@ -978,4 +978,5 @@ func Init() {
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
 	go ClearSessionMapSchedule()
 	go asana.ScheduleWeeklyTaskSync()
+	// asana.SyncronizeWeeklyTasks()
 }

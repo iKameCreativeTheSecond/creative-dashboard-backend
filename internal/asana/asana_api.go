@@ -21,7 +21,6 @@ import (
 func FetchTasks(token string, projectID string) ([]Task, error) {
 	var allTasks []Task
 	url := fmt.Sprintf("https://app.asana.com/api/1.0/projects/%s/tasks?opt_fields=name,assignee.name,assignee.email,completed,due_on,custom_fields&limit=50", projectID)
-
 	for {
 		// Build request
 		req, err := http.NewRequest("GET", url, nil)
@@ -44,6 +43,7 @@ func FetchTasks(token string, projectID string) ([]Task, error) {
 		// Parse JSON
 		var asanaResp AsanaResponse
 		if err := json.Unmarshal(body, &asanaResp); err != nil {
+			fmt.Printf("Error unmarshalling Asana response: %v\nResponse body: %s\n", err, string(body))
 			return nil, err
 		}
 
@@ -75,6 +75,7 @@ func FetchAsanaTasksTeamPlayable(team string, projectID string) []*collectionmod
 		fmt.Println("Error:", err)
 		return nil
 	}
+	fmt.Printf("Fetched %d tasks from Asana project %s for team %s\n", len(tasks), projectID, team)
 
 	var completedTasks []*collectionmodels.CompletedTask
 	var thisMondayAtNine time.Time
@@ -84,11 +85,15 @@ func FetchAsanaTasksTeamPlayable(team string, projectID string) []*collectionmod
 		weekday = 7
 	}
 	thisMondayAtNine = now.AddDate(0, 0, -weekday+1).Truncate(24 * time.Hour).Add(9 * time.Hour)
+	count := 0
+	rejectedCount := 0
 	for _, task := range tasks {
 
 		if !task.Completed {
+
 			continue
 		}
+		count++
 
 		// Map Asana task to internal model
 		var toolIndexes []int
@@ -99,16 +104,28 @@ func FetchAsanaTasksTeamPlayable(team string, projectID string) []*collectionmod
 				toolIndexes = GetListToolAsIndexes(field.DisplayValue)
 			}
 			if field.Name == "PLA Difficult" || field.Name == "Art point" || field.Name == "Video Difficult" || field.Name == "Concept Difficult" {
+
+				// fmt.Println("Parsing level from field:", field.Name, "with value:", field.DisplayValue)
+				// Try parsing as integer first, fall back to float
+				// parsed := false
 				if lvl, err := strconv.Atoi(field.DisplayValue); err == nil {
 					level = lvl
+					// parsed = true
+				} else if lvl, err := strconv.ParseFloat(field.DisplayValue, 64); err == nil {
+					level = int(lvl)
+					// parsed = true
 				}
+				// if !parsed {
+				// 	fmt.Printf("Warning: could not parse level from field '%s' with value '%s'\n", field.Name, field.DisplayValue)
+				// }
 			}
 			if field.Name == "Game Name" {
 				projectName = field.DisplayValue
 			}
 		}
-
-		if level <= 1 {
+		// fmt.Println("Processing completed task:", task.Name, "Level:", level, "Tools:", toolIndexes)
+		if level < 1 {
+			rejectedCount++
 			continue
 		}
 
@@ -132,7 +149,6 @@ func FetchAsanaTasksTeamPlayable(team string, projectID string) []*collectionmod
 		// 	completedTask.Tool, completedTask.Level, completedTask.Project, completedTask.DoneDate.Format("2006-01-02"))
 
 		//fmt.Print("ID ", completedTask.TaskID, " | Name: ", completedTask.TaskName, " | Assignee: ", completedTask.AssigneeID, " | Tool: ", completedTask.Tool, " | Level: ", completedTask.Level, " | Project: ", completedTask.Project, " | DoneDate: ", completedTask.DoneDate.Format("2006-01-02"), "\n")
-
 		completedTasks = append(completedTasks, completedTask)
 	}
 	return completedTasks
@@ -156,7 +172,7 @@ func GetListToolAsIndexes(s string) []int {
 // Implementation of scheduling logic goes here
 func ScheduleWeeklyTaskSync() {
 	c := cron.New()
-	c.AddFunc("47 11 * * 3", SyncronizeWeeklyTasks)
+	c.AddFunc("47 13 * * 3", SyncronizeWeeklyTasks)
 	c.Start()
 }
 
