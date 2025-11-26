@@ -912,7 +912,30 @@ func HandleDeleteWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 /// =========== Project Issues Handler =====================
 
 func HandlePostProjectIssues(w http.ResponseWriter, r *http.Request) {
-	// TODO : implement role-based access control
+	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
+	if !ok || teamRoles == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Check if user is admin
+	isAdmin := false
+	for _, role := range teamRoles {
+		if role.Role == "admin" {
+			isAdmin = true
+			break
+		}
+	}
+
+	var managerOfTeams []string
+	if !isAdmin {
+		for _, role := range teamRoles {
+			if role.Role == "manager" {
+				managerOfTeams = append(managerOfTeams, role.Team)
+			}
+		}
+	}
+
 	var body map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -928,6 +951,18 @@ func HandlePostProjectIssues(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Apply role-based filtering
+	if !isAdmin && issues != nil && len(*issues) > 0 {
+		filteredIssues := []collectionmodels.ProjectIssue{}
+		for _, issue := range *issues {
+			// Admin sees all, managers see their teams' issues
+			if contains(managerOfTeams, issue.Team) {
+				filteredIssues = append(filteredIssues, issue)
+			}
+		}
+		issues = &filteredIssues
 	}
 
 	w.Header().Set("Content-Type", "application/json")
