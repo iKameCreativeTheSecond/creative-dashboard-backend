@@ -168,11 +168,11 @@ func GetListToolAsIndexes(s string) []int {
 	return numbers
 }
 
-// schedule to run every Wednesday at 11:38 AM
+// schedule to run every Monday at 11:59 AM
 // Implementation of scheduling logic goes here
 func ScheduleWeeklyTaskSync() {
 	c := cron.New()
-	c.AddFunc("47 13 * * 3", SyncronizeWeeklyTasks)
+	c.AddFunc("59 11 * * 1", SyncronizeWeeklyTasks)
 	c.Start()
 }
 
