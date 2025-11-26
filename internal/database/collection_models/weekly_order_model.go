@@ -68,6 +68,14 @@ func DeleteWeeklyOrder(client *mongo.Client, dbName, collName string, startWeek 
 	return err
 }
 
+func DeleteWeeklyOrderByID(client *mongo.Client, dbName, collName string, id primitive.ObjectID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collName)
+	_, err := collection.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
 func GetAllWeeklyOrders(client *mongo.Client, dbName, collName string) ([]*WeeklyOrder, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
