@@ -648,7 +648,7 @@ func HandleUpdateLevel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	pointsInterface := body["Point"].([]interface{})
+	pointsInterface := body["LevelPoint"].([]interface{})
 	points := make([]int, len(pointsInterface))
 	for i, v := range pointsInterface {
 		points[i] = int(v.(float64))
@@ -671,7 +671,7 @@ func HandleAddNewLevel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	pointsInterface := body["Point"].([]interface{})
+	pointsInterface := body["LevelPoint"].([]interface{})
 	points := make([]int, len(pointsInterface))
 	for i, v := range pointsInterface {
 		points[i] = int(v.(float64))
@@ -987,6 +987,9 @@ func Init() {
 	http.Handle("/get/last-week-team-performance", CORSMiddleware(http.HandlerFunc(HandleLastWeekTeamPerformance)))
 	http.Handle("/get/team-weekly-target", CORSMiddleware(http.HandlerFunc(HandleTeamWeeklyTarget)))
 
+	// /=======================================================
+	// 						FOR ADMIN USE ONLY
+	/// =======================================================
 	http.Handle("/get/team-members", CORSMiddleware(http.HandlerFunc(HandleGetAllTeamMembers)))
 	http.Handle("/post/update-team-member", CORSMiddleware(http.HandlerFunc(HandleUpdateTeamMember)))
 	http.Handle("/post/add-new-team-member", CORSMiddleware(http.HandlerFunc(HandleAddNewTeamMember)))
@@ -1016,6 +1019,7 @@ func Init() {
 	http.Handle("/post/update-weekly-order", CORSMiddleware(http.HandlerFunc(HandleUpdateWeeklyOrder)))
 	http.Handle("/post/add-new-weekly-order", CORSMiddleware(http.HandlerFunc(HandleAddNewWeeklyOrder)))
 	http.Handle("/post/delete-weekly-order", CORSMiddleware(http.HandlerFunc(HandleDeleteWeeklyOrder)))
+	/// =======================================================
 
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
 	go ClearSessionMapSchedule()
