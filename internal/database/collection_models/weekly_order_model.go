@@ -22,12 +22,13 @@ type WeeklyOrder struct {
 	Video     int                `bson:"video"`
 }
 
-func InsertWeeklyOrder(client *mongo.Client, dbName, collName string, order *WeeklyOrder) error {
+func InsertWeeklyOrder(client *mongo.Client, dbName, collName string, order *WeeklyOrder) (primitive.ObjectID, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collName)
-	_, err := collection.InsertOne(ctx, order)
-	return err
+	res, err := collection.InsertOne(ctx, order)
+	id := res.InsertedID.(primitive.ObjectID)
+	return id, err
 }
 
 func UpdateWeeklyOrder(client *mongo.Client, dbName, collName string, order *WeeklyOrder) error {

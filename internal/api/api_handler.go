@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -878,13 +879,13 @@ func HandleAddNewWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 		Video:     (int)(body["Video"].(float64)),
 		PLA:       (int)(body["PLA"].(float64)),
 	}
-	err := collectionmodels.InsertWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), order)
+	id, err := collectionmodels.InsertWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), order)
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"message": "Weekly order added successfully"}`))
+	w.Write(fmt.Appendf(nil, `{"message": "Weekly order added successfully", "id": "%s"}`, id.Hex()))
 }
 
 func HandleDeleteWeeklyOrder(w http.ResponseWriter, r *http.Request) {
