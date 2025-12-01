@@ -68,23 +68,29 @@ func InsertCompletedTaskToDataBase(client *mongo.Client, dbName, collName string
 	return err
 }
 
-func FetchAsanaTasksTeamPlayable(team string, projectID string) []*collectionmodels.CompletedTask {
+func FetchAsanaTasksByTeam(team string, projectID string) []*collectionmodels.CompletedTask {
 	token := os.Getenv("ASANA_TOKEN") // safer to set as env var
 	tasks, err := FetchTasks(token, projectID)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return nil
 	}
-	fmt.Printf("Fetched %d tasks from Asana project %s for team %s\n", len(tasks), projectID, team)
 
 	var completedTasks []*collectionmodels.CompletedTask
-	var thisMondayAtNine time.Time
-	now := time.Now()
+	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
+	now := time.Now().In(loc)
 	weekday := int(now.Weekday())
 	if weekday == 0 {
 		weekday = 7
 	}
-	thisMondayAtNine = now.AddDate(0, 0, -weekday+1).Truncate(24 * time.Hour).Add(9 * time.Hour)
+	// This Monday at 09:00 Vietnam time
+	thisMondayAtNine := time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day()-weekday+1,
+		9, 0, 0, 0,
+		loc,
+	)
 	count := 0
 	rejectedCount := 0
 	for _, task := range tasks {
@@ -171,29 +177,38 @@ func GetListToolAsIndexes(s string) []int {
 // schedule to run every Monday at 11:59 AM
 // Implementation of scheduling logic goes here
 func ScheduleWeeklyTaskSync() {
-	c := cron.New()
-	c.AddFunc("59 11 * * 1", SyncronizeWeeklyTasks)
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		fmt.Println("Cannot load Asia/Ho_Chi_Minh, fallback UTC:", err)
+		loc = time.UTC
+	}
+	c := cron.New(cron.WithLocation(loc))
+	_, err = c.AddFunc("59 11 * * 1", SyncronizeWeeklyTasks)
+	if err != nil {
+		fmt.Println("Cron add error:", err)
+		return
+	}
 	c.Start()
 }
 
 func SyncronizeWeeklyTasks() {
 	fmt.Println("Starting weekly Asana task synchronization...")
-	plaCompltedTasks := FetchAsanaTasksTeamPlayable("PLA", os.Getenv("ASANA_PROJECT_ID_PLA"))
+	plaCompltedTasks := FetchAsanaTasksByTeam("PLA", os.Getenv("ASANA_PROJECT_ID_PLA"))
 	fmt.Printf("Inserting %d PLA completed tasks into the database...\n", len(plaCompltedTasks))
 	if len(plaCompltedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), plaCompltedTasks)
 	}
-	videoCompletedTasks := FetchAsanaTasksTeamPlayable("Video", os.Getenv("ASANA_PROJECT_ID_VIDEO"))
+	videoCompletedTasks := FetchAsanaTasksByTeam("Video", os.Getenv("ASANA_PROJECT_ID_VIDEO"))
 	fmt.Printf("Inserting %d Video completed tasks into the database...\n", len(videoCompletedTasks))
 	if len(videoCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), videoCompletedTasks)
 	}
-	artCompletedTasks := FetchAsanaTasksTeamPlayable("Art", os.Getenv("ASANA_PROJECT_ID_ART"))
+	artCompletedTasks := FetchAsanaTasksByTeam("Art", os.Getenv("ASANA_PROJECT_ID_ART"))
 	fmt.Printf("Inserting %d Art completed tasks into the database...\n", len(artCompletedTasks))
 	if len(artCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), artCompletedTasks)
 	}
-	conceptCompletedTasks := FetchAsanaTasksTeamPlayable("Concept", os.Getenv("ASANA_PROJECT_ID_CONCEPT"))
+	conceptCompletedTasks := FetchAsanaTasksByTeam("Concept", os.Getenv("ASANA_PROJECT_ID_CONCEPT"))
 	fmt.Printf("Inserting %d Concept completed tasks into the database...\n", len(conceptCompletedTasks))
 	if len(conceptCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), conceptCompletedTasks)
