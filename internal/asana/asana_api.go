@@ -183,7 +183,7 @@ func ScheduleWeeklyTaskSync() {
 		loc = time.UTC
 	}
 	c := cron.New(cron.WithLocation(loc))
-	_, err = c.AddFunc("59 11 * * 1", SyncronizeWeeklyTasks)
+	_, err = c.AddFunc("59 23 * * 1", SyncronizeWeeklyTasks)
 	if err != nil {
 		fmt.Println("Cron add error:", err)
 		return
