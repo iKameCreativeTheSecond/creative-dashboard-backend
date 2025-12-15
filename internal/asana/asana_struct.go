@@ -1,34 +1,34 @@
 package asana
 
-// Structs for Asana API response
-type AsanaResponse struct {
-	Data     []Task    `json:"data"`
-	NextPage *NextPage `json:"next_page"`
+// Structs for ClickUp API response
+type ClickUpResponse struct {
+	Tasks    []Task `json:"tasks"`
+	LastPage bool   `json:"last_page"`
 }
 
 type Task struct {
-	Gid          string        `json:"gid"`
+	Id           string        `json:"id"`
 	Name         string        `json:"name"`
-	Completed    bool          `json:"completed"`
-	DueOn        string        `json:"due_on"`
-	Assignee     *Assignee     `json:"assignee"`
+	Status       *Status       `json:"status"`
+	DueDate      string        `json:"due_date"`
+	Assignees    []Assignee    `json:"assignees"`
 	CustomFields []CustomField `json:"custom_fields"`
 }
 
+type Status struct {
+	Status string `json:"status"`
+	Type   string `json:"type"`
+}
+
 type Assignee struct {
-	Gid   string `json:"gid"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Id       int    `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
 }
 
 type CustomField struct {
-	Gid          string `json:"gid"`
-	Name         string `json:"name"`
-	DisplayValue string `json:"display_value"`
-}
-
-type NextPage struct {
-	Offset string `json:"offset"`
-	Path   string `json:"path"`
-	Uri    string `json:"uri"`
+	Id         string      `json:"id"`
+	Name       string      `json:"name"`
+	Value      interface{} `json:"value"`
+	TypeConfig interface{} `json:"type_config"`
 }

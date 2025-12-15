@@ -18,16 +18,21 @@ import (
 	db "performance-dashboard-backend/internal/database"
 )
 
-func FetchTasks(token string, projectID string) ([]Task, error) {
+func FetchTasks(token string, spaceID string) ([]Task, error) {
 	var allTasks []Task
-	url := fmt.Sprintf("https://app.asana.com/api/1.0/projects/%s/tasks?opt_fields=name,assignee.name,assignee.email,completed,due_on,custom_fields&limit=50", projectID)
+	page := 0
+
 	for {
+		// Build ClickUp API URL with pagination
+		url := fmt.Sprintf("https://api.clickup.com/api/v2/space/%s/task?page=%d&include_closed=true", spaceID, page)
+
 		// Build request
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", token)
+		req.Header.Set("Content-Type", "application/json")
 
 		// Send request
 		client := &http.Client{}
@@ -41,20 +46,20 @@ func FetchTasks(token string, projectID string) ([]Task, error) {
 		body, _ := io.ReadAll(resp.Body)
 
 		// Parse JSON
-		var asanaResp AsanaResponse
-		if err := json.Unmarshal(body, &asanaResp); err != nil {
-			fmt.Printf("Error unmarshalling Asana response: %v\nResponse body: %s\n", err, string(body))
+		var clickupResp ClickUpResponse
+		if err := json.Unmarshal(body, &clickupResp); err != nil {
+			fmt.Printf("Error unmarshalling ClickUp response: %v\nResponse body: %s\n", err, string(body))
 			return nil, err
 		}
 
 		// Collect tasks
-		allTasks = append(allTasks, asanaResp.Data...)
+		allTasks = append(allTasks, clickupResp.Tasks...)
 
-		// Check pagination
-		if asanaResp.NextPage == nil {
+		// Check if last page
+		if clickupResp.LastPage || len(clickupResp.Tasks) == 0 {
 			break
 		}
-		url = asanaResp.NextPage.Uri
+		page++
 	}
 
 	return allTasks, nil
@@ -68,9 +73,9 @@ func InsertCompletedTaskToDataBase(client *mongo.Client, dbName, collName string
 	return err
 }
 
-func FetchAsanaTasksByTeam(team string, projectID string) []*collectionmodels.CompletedTask {
-	token := os.Getenv("ASANA_TOKEN") // safer to set as env var
-	tasks, err := FetchTasks(token, projectID)
+func FetchAsanaTasksByTeam(team string, spaceID string) []*collectionmodels.CompletedTask {
+	token := os.Getenv("CLICKUP_TOKEN") // safer to set as env var
+	tasks, err := FetchTasks(token, spaceID)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return nil
@@ -94,39 +99,32 @@ func FetchAsanaTasksByTeam(team string, projectID string) []*collectionmodels.Co
 	count := 0
 	rejectedCount := 0
 	for _, task := range tasks {
-
-		if !task.Completed {
-
+		// Check if task is completed (closed status)
+		if task.Status == nil || task.Status.Type != "closed" {
 			continue
 		}
 		count++
 
-		// Map Asana task to internal model
+		// Map ClickUp task to internal model
 		var toolIndexes []int
 		var level int
 		var projectName string
 		for _, field := range task.CustomFields {
+			valueStr := fmt.Sprintf("%v", field.Value)
+
 			if field.Name == "Tool/CTST PLA" || field.Name == "Tool/CTST Video" || field.Name == "Tool/CTST Art" || field.Name == "Tool/CTST Concept" {
-				toolIndexes = GetListToolAsIndexes(field.DisplayValue)
+				toolIndexes = GetListToolAsIndexes(valueStr)
 			}
 			if field.Name == "PLA Difficult" || field.Name == "Art point" || field.Name == "Video Difficult" || field.Name == "Concept Difficult" {
-
-				// fmt.Println("Parsing level from field:", field.Name, "with value:", field.DisplayValue)
 				// Try parsing as integer first, fall back to float
-				// parsed := false
-				if lvl, err := strconv.Atoi(field.DisplayValue); err == nil {
+				if lvl, err := strconv.Atoi(valueStr); err == nil {
 					level = lvl
-					// parsed = true
-				} else if lvl, err := strconv.ParseFloat(field.DisplayValue, 64); err == nil {
+				} else if lvl, err := strconv.ParseFloat(valueStr, 64); err == nil {
 					level = int(lvl)
-					// parsed = true
 				}
-				// if !parsed {
-				// 	fmt.Printf("Warning: could not parse level from field '%s' with value '%s'\n", field.Name, field.DisplayValue)
-				// }
 			}
 			if field.Name == "Game Name" {
-				projectName = field.DisplayValue
+				projectName = valueStr
 			}
 		}
 		// fmt.Println("Processing completed task:", task.Name, "Level:", level, "Tools:", toolIndexes)
@@ -139,11 +137,17 @@ func FetchAsanaTasksByTeam(team string, projectID string) []*collectionmodels.Co
 			toolIndexes = []int{}
 		}
 
+		// Get assignee email (use first assignee if multiple)
+		assigneeEmail := ""
+		if len(task.Assignees) > 0 {
+			assigneeEmail = task.Assignees[0].Email
+		}
+
 		completedTask := &collectionmodels.CompletedTask{
-			TaskID:     task.Gid,
+			TaskID:     task.Id,
 			DoneDate:   thisMondayAtNine,
 			TaskName:   task.Name,
-			AssigneeID: task.Assignee.Email,
+			AssigneeID: assigneeEmail,
 			Team:       team,
 			Tool:       toolIndexes,
 			Project:    projectName,
@@ -192,26 +196,26 @@ func ScheduleWeeklyTaskSync() {
 }
 
 func SyncronizeWeeklyTasks() {
-	fmt.Println("Starting weekly Asana task synchronization...")
-	plaCompltedTasks := FetchAsanaTasksByTeam("PLA", os.Getenv("ASANA_PROJECT_ID_PLA"))
+	fmt.Println("Starting weekly ClickUp task synchronization...")
+	plaCompltedTasks := FetchAsanaTasksByTeam("PLA", os.Getenv("CLICKUP_SPACE_ID_PLA"))
 	fmt.Printf("Inserting %d PLA completed tasks into the database...\n", len(plaCompltedTasks))
 	if len(plaCompltedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), plaCompltedTasks)
 	}
-	videoCompletedTasks := FetchAsanaTasksByTeam("Video", os.Getenv("ASANA_PROJECT_ID_VIDEO"))
+	videoCompletedTasks := FetchAsanaTasksByTeam("Video", os.Getenv("CLICKUP_SPACE_ID_VIDEO"))
 	fmt.Printf("Inserting %d Video completed tasks into the database...\n", len(videoCompletedTasks))
 	if len(videoCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), videoCompletedTasks)
 	}
-	artCompletedTasks := FetchAsanaTasksByTeam("Art", os.Getenv("ASANA_PROJECT_ID_ART"))
+	artCompletedTasks := FetchAsanaTasksByTeam("Art", os.Getenv("CLICKUP_SPACE_ID_ART"))
 	fmt.Printf("Inserting %d Art completed tasks into the database...\n", len(artCompletedTasks))
 	if len(artCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), artCompletedTasks)
 	}
-	conceptCompletedTasks := FetchAsanaTasksByTeam("Concept", os.Getenv("ASANA_PROJECT_ID_CONCEPT"))
+	conceptCompletedTasks := FetchAsanaTasksByTeam("Concept", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"))
 	fmt.Printf("Inserting %d Concept completed tasks into the database...\n", len(conceptCompletedTasks))
 	if len(conceptCompletedTasks) > 0 {
 		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), conceptCompletedTasks)
 	}
-	fmt.Println("Weekly Asana task synchronization completed.")
+	fmt.Println("Weekly ClickUp task synchronization completed.")
 }
