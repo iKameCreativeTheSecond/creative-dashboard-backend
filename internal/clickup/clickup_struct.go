@@ -33,10 +33,25 @@ type ClickUpCustomField struct {
 	TypeConfig any    `json:"type_config"`
 }
 
+type ClickUpProjectOption struct {
+	Options []ClickUpProjectItem `json:"options"`
+}
+
+type ClickUpProjectItem struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	OrderIndex int    `json:"orderindex"`
+}
+
 type ClickUpProjectCustomField struct {
-	Name       string        `json:"name"`
-	TypeConfig ClickUpOption `json:"type_config"`
-	Value      int           `json:"value"`
+	Name       string               `json:"name"`
+	TypeConfig ClickUpProjectOption `json:"type_config"`
+	Value      int                  `json:"value"`
+}
+
+type ClickUpStatus struct {
+	Status string `json:"status"`
+	Type   string `json:"type"`
 }
 
 type ClickUpTask struct {
@@ -45,6 +60,7 @@ type ClickUpTask struct {
 	DateDone     string               `json:"date_done"`
 	Assignees    []ClickUpAssignee    `json:"assignees"`
 	CustomFields []ClickUpCustomField `json:"custom_fields"`
+	Status       ClickUpStatus        `json:"status"`
 }
 
 type ClickUpResponse struct {

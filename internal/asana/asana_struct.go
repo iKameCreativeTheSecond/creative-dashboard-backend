@@ -1,5 +1,33 @@
 package asana
 
+// Response wrapper for fetching lists from a space
+type ClickUpListsResponse struct {
+	Lists []ClickUpTaskListResponse `json:"lists"`
+}
+
+type ClickUpTaskListResponse struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type Folder struct {
+	Id     string `json:"id"`
+	Name   string `json:"name"`
+	Hidden bool   `json:"hidden"`
+	Access bool   `json:"access"`
+}
+
+type Space struct {
+	Id     string `json:"id"`
+	Name   string `json:"name"`
+	Access bool   `json:"access"`
+}
+
+type Priority struct {
+	Priority string `json:"priority"`
+	Color    string `json:"color"`
+}
+
 // Structs for ClickUp API response
 type ClickUpResponse struct {
 	Tasks    []Task `json:"tasks"`

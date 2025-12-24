@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"performance-dashboard-backend/internal/asana"
+	"performance-dashboard-backend/internal/clickup"
 	db "performance-dashboard-backend/internal/database"
 	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
 	"time"
@@ -1023,6 +1023,5 @@ func Init() {
 
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
 	go ClearSessionMapSchedule()
-	go asana.ScheduleWeeklyTaskSync()
-	// asana.SyncronizeWeeklyTasks()
+	go clickup.Init()
 }

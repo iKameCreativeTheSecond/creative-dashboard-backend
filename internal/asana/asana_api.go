@@ -14,17 +14,66 @@ import (
 
 	"github.com/robfig/cron/v3"
 	"go.mongodb.org/mongo-driver/mongo"
-
-	db "performance-dashboard-backend/internal/database"
 )
 
-func FetchTasks(token string, spaceID string) ([]Task, error) {
+func FetchTaskList(token string, spaceID string) ([]ClickUpTaskListResponse, error) {
+	// Build ClickUp API URL
+	url := fmt.Sprintf("https://api.clickup.com/api/v2/space/%s/list", spaceID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Read body
+	body, _ := io.ReadAll(resp.Body)
+
+	// Debug: Print response status and body
+	fmt.Printf("ClickUp API Response Status: %d\n", resp.StatusCode)
+
+	// Parse JSON - the response has a "lists" wrapper
+	var listsResp ClickUpListsResponse
+	if err := json.Unmarshal(body, &listsResp); err != nil {
+		fmt.Printf("Error unmarshalling ClickUp response: %v\nResponse body: %s\n", err, string(body))
+		return nil, err
+	}
+
+	return listsResp.Lists, nil
+}
+
+func FetchTasksFromAllLists(token string, spaceID string) ([]Task, error) {
+	taskLists, err := FetchTaskList(token, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	var allTasks []Task
+	for _, list := range taskLists {
+		tasks, err := FetchTasks(token, list.Id)
+		if err != nil {
+			return nil, err
+		}
+		allTasks = append(allTasks, tasks...)
+	}
+	return allTasks, nil
+}
+
+func FetchTasks(token string, listID string) ([]Task, error) {
 	var allTasks []Task
 	page := 0
 
 	for {
 		// Build ClickUp API URL with pagination
-		url := fmt.Sprintf("https://api.clickup.com/api/v2/space/%s/task?page=%d&include_closed=true", spaceID, page)
+		url := fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?page=%d", listID, page)
 
 		// Build request
 		req, err := http.NewRequest("GET", url, nil)
@@ -44,6 +93,10 @@ func FetchTasks(token string, spaceID string) ([]Task, error) {
 
 		// Read body
 		body, _ := io.ReadAll(resp.Body)
+
+		// Debug: Print response status and body
+		fmt.Printf("ClickUp API Response Status: %d\n", resp.StatusCode)
+		fmt.Printf("ClickUp API Response Body: %s\n", string(body))
 
 		// Parse JSON
 		var clickupResp ClickUpResponse
@@ -75,11 +128,14 @@ func InsertCompletedTaskToDataBase(client *mongo.Client, dbName, collName string
 
 func FetchAsanaTasksByTeam(team string, spaceID string) []*collectionmodels.CompletedTask {
 	token := os.Getenv("CLICKUP_TOKEN") // safer to set as env var
-	tasks, err := FetchTasks(token, spaceID)
+
+	tasks, err := FetchTasksFromAllLists(token, spaceID)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return nil
 	}
+
+	fmt.Println("all task", len(tasks), "tasks fetched from ClickUp space", tasks)
 
 	var completedTasks []*collectionmodels.CompletedTask
 	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
@@ -197,25 +253,25 @@ func ScheduleWeeklyTaskSync() {
 
 func SyncronizeWeeklyTasks() {
 	fmt.Println("Starting weekly ClickUp task synchronization...")
-	plaCompltedTasks := FetchAsanaTasksByTeam("PLA", os.Getenv("CLICKUP_SPACE_ID_PLA"))
+	plaCompltedTasks := FetchAsanaTasksByTeam("PLA", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"))
 	fmt.Printf("Inserting %d PLA completed tasks into the database...\n", len(plaCompltedTasks))
-	if len(plaCompltedTasks) > 0 {
-		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), plaCompltedTasks)
-	}
-	videoCompletedTasks := FetchAsanaTasksByTeam("Video", os.Getenv("CLICKUP_SPACE_ID_VIDEO"))
-	fmt.Printf("Inserting %d Video completed tasks into the database...\n", len(videoCompletedTasks))
-	if len(videoCompletedTasks) > 0 {
-		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), videoCompletedTasks)
-	}
-	artCompletedTasks := FetchAsanaTasksByTeam("Art", os.Getenv("CLICKUP_SPACE_ID_ART"))
-	fmt.Printf("Inserting %d Art completed tasks into the database...\n", len(artCompletedTasks))
-	if len(artCompletedTasks) > 0 {
-		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), artCompletedTasks)
-	}
-	conceptCompletedTasks := FetchAsanaTasksByTeam("Concept", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"))
-	fmt.Printf("Inserting %d Concept completed tasks into the database...\n", len(conceptCompletedTasks))
-	if len(conceptCompletedTasks) > 0 {
-		collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), conceptCompletedTasks)
-	}
-	fmt.Println("Weekly ClickUp task synchronization completed.")
+	// if len(plaCompltedTasks) > 0 {
+	// 	collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), plaCompltedTasks)
+	// }
+	// videoCompletedTasks := FetchAsanaTasksByTeam("Video", os.Getenv("CLICKUP_SPACE_ID_VIDEO"))
+	// fmt.Printf("Inserting %d Video completed tasks into the database...\n", len(videoCompletedTasks))
+	// if len(videoCompletedTasks) > 0 {
+	// 	collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), videoCompletedTasks)
+	// }
+	// artCompletedTasks := FetchAsanaTasksByTeam("Art", os.Getenv("CLICKUP_SPACE_ID_ART"))
+	// fmt.Printf("Inserting %d Art completed tasks into the database...\n", len(artCompletedTasks))
+	// if len(artCompletedTasks) > 0 {
+	// 	collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), artCompletedTasks)
+	// }
+	// conceptCompletedTasks := FetchAsanaTasksByTeam("Concept", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"))
+	// fmt.Printf("Inserting %d Concept completed tasks into the database...\n", len(conceptCompletedTasks))
+	// if len(conceptCompletedTasks) > 0 {
+	// 	collectionmodels.InsertCompletedTaskToDataBase(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), conceptCompletedTasks)
+	// }
+	// fmt.Println("Weekly ClickUp task synchronization completed.")
 }

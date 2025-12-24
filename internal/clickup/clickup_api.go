@@ -4,9 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
+
+	database "performance-dashboard-backend/internal/database"
+	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
+	util "performance-dashboard-backend/internal/utils"
+
+	"github.com/robfig/cron/v3"
 )
 
 func FetchTasksFromSpace(token string, spaceID string, isCompleted bool) ([]ClickUpTask, error) {
@@ -32,7 +42,11 @@ func FetchTasksFromSpace(token string, spaceID string, isCompleted bool) ([]Clic
 	defer resp.Body.Close()
 
 	// Read body
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		fmt.Printf("Error reading ClickUp response body (spaceID=%s, status=%d): %v\n", spaceID, resp.StatusCode, readErr)
+		return nil, readErr
+	}
 
 	// Debug: Print response status and body
 	fmt.Printf("ClickUp API Response Status: %d\n", resp.StatusCode)
@@ -59,44 +73,58 @@ func FetchTasksFromSpace(token string, spaceID string, isCompleted bool) ([]Clic
 }
 
 func FetchTaskList(token string, listID string, isCompleted bool) ([]ClickUpTask, error) {
-	// Build ClickUp API URL
-	var url string
-	urlCompltetedFilter := fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?statuses[]=COMPLETED&include_closed=true&archived=false", listID)
-	urlOpenFilter := fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?include_closed=false&archived=false", listID)
-	if isCompleted {
-		url = urlCompltetedFilter
-	} else {
-		url = urlOpenFilter
-	}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", token)
-	req.Header.Set("Content-Type", "application/json")
-
-	// Send request
 	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
+	page := 0
+	var allTasks []ClickUpTask
+
+	for {
+		var url string
+		if isCompleted {
+			url = fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?statuses[]=COMPLETED&include_closed=true&archived=false", listID)
+		} else {
+			url = fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?include_closed=true&archived=false", listID)
+		}
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			fmt.Printf("Error creating ClickUp request (listID=%s, page=%d): %v\n", listID, page, err)
+			return nil, err
+		}
+		req.Header.Set("Authorization", token)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			fmt.Printf("Error sending ClickUp request (listID=%s, page=%d): %v\n", listID, page, err)
+			return nil, err
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			fmt.Printf("Error reading ClickUp response body (listID=%s, page=%d, status=%d): %v\n", listID, page, resp.StatusCode, readErr)
+			return nil, readErr
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("clickup list tasks request failed (listID=%s, page=%d, status=%d): %s", listID, page, resp.StatusCode, string(body))
+		}
+
+		// Parse JSON
+		var listResp ClickUpResponse
+		if err := json.Unmarshal(body, &listResp); err != nil {
+			fmt.Printf("Error unmarshalling ClickUp response (listID=%s, page=%d): %v\nResponse body: %s\n", listID, page, err, string(body))
+			return nil, err
+		}
+
+		allTasks = append(allTasks, listResp.Tasks...)
+		if listResp.LastPage || len(listResp.Tasks) == 0 {
+			break
+		}
+		page++
 	}
-	defer resp.Body.Close()
 
-	// Read body
-	body, _ := io.ReadAll(resp.Body)
-
-	// Debug: Print response status and body
-	fmt.Printf("ClickUp API Response Status: %d\n", resp.StatusCode)
-
-	// Parse JSON - the response has a "lists" wrapper
-	var listsResp ClickUpResponse
-	if err := json.Unmarshal(body, &listsResp); err != nil {
-		fmt.Printf("Error unmarshalling ClickUp response: %v\nResponse body: %s\n", err, string(body))
-		return nil, err
-	}
-
-	return listsResp.Tasks, nil
+	return allTasks, nil
 }
 
 func UnixMillisToTime(ms int64) time.Time {
@@ -112,20 +140,401 @@ func UnixMillisToTimeStr(msStr string) time.Time {
 }
 
 func Init() {
-	// Placeholder for any initialization logic if needed in the future
+	go ScheduleWeeklyTaskSync()
+}
 
+func ScheduleWeeklyTaskSync() {
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		fmt.Println("Cannot load Asia/Ho_Chi_Minh, fallback UTC:", err)
+		loc = time.UTC
+	}
+	c := cron.New(cron.WithLocation(loc))
+	_, err = c.AddFunc("59 23 * * 1", SyncronizeWeeklyClickUpTasks)
+	if err != nil {
+		fmt.Println("Cron add error:", err)
+		return
+	}
+	c.Start()
+}
+
+func SyncronizeWeeklyClickUpTasks() {
+	SyncTaskForConcept()
+	SyncTaskForPlayable()
+	SyncTaskForArt()
+	SyncTaskForVideo()
 }
 
 func SyncTaskForConcept() {
-	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), true)
+	var tasks = GetTaskForConcept()
+	if tasks != nil {
+		if len(tasks) > 0 {
+			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
+		}
+	}
+}
+
+func SyncTaskForPlayable() {
+	var tasks = GetTaskForTeam("PLA", os.Getenv("CLICKUP_SPACE_ID_PLA"), false)
+	if tasks != nil {
+		if len(tasks) > 0 {
+			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
+		}
+	}
+
+	var task2 = GetTaskForTeam("PLA", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), true)
+	if task2 != nil {
+		if len(task2) > 0 {
+			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task2)
+		}
+	}
+}
+
+func SyncTaskForArt() {
+	var tasks = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_ART"), false)
+	if tasks != nil {
+		if len(tasks) > 0 {
+			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
+		}
+	}
+
+	var task2 = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), true)
+	if task2 != nil {
+		if len(task2) > 0 {
+			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task2)
+		}
+	}
+}
+
+func SyncTaskForVideo() {
+	var tasks = GetTaskForTeam("Video", os.Getenv("CLICKUP_SPACE_ID_VIDEO"), false)
+	if tasks != nil {
+		if len(tasks) > 0 {
+			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
+		}
+	}
+
+	var task2 = GetTaskForTeam("Video", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), true)
+	if task2 != nil {
+		if len(task2) > 0 {
+			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task2)
+		}
+	}
+}
+
+func GetTaskForTeam(team string, spaceID string, isOverrideFromConcept bool) []*collectionmodels.CompletedTask {
+
+	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true)
 	if err != nil {
 		fmt.Println("Error fetching ClickUp task list:", err)
-		return
+		return nil
+	}
+
+	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if locErr != nil {
+		locationVN = time.FixedZone("ICT", 7*60*60)
+	}
+	nowVN := time.Now().In(locationVN)
+	// Window: 00:01 Tuesday last week -> 23:59 Monday this week (end-exclusive: Tuesday 00:00 this week)
+	weekday := nowVN.Weekday()
+	daysSinceTuesday := (int(weekday) - int(time.Tuesday) + 7) % 7
+	thisWeekTuesdayStart := time.Date(nowVN.Year(), nowVN.Month(), nowVN.Day(), 0, 0, 0, 0, locationVN).AddDate(0, 0, -daysSinceTuesday)
+	windowEndExclusive := thisWeekTuesdayStart
+	windowStartInclusive := thisWeekTuesdayStart.AddDate(0, 0, -7).Add(1 * time.Minute)
+
+	var completedTasks []*collectionmodels.CompletedTask
+
+	for _, task := range res {
+
+		if isOverrideFromConcept && !strings.Contains(strings.ToLower(task.Name), strings.ToLower(team)) {
+			continue
+		}
+		var customFieldMap = util.IndexBy(task.CustomFields, func(cf *ClickUpCustomField) string {
+			return cf.Name
+		})
+
+		if task.DateDone == "" {
+			continue
+		}
+
+		taskDoneDate := UnixMillisToTimeStr(task.DateDone).In(locationVN)
+		if taskDoneDate.Before(windowStartInclusive) || !taskDoneDate.Before(windowEndExclusive) {
+			continue
+		}
+
+		var toolIndexes []int
+		if toolCustomField, ok := customFieldMap["Tool/CTST "+team]; ok && toolCustomField != nil {
+			toolFields, err := util.CoerceStruct[ClickUpToolCustomField](toolCustomField)
+			if err == nil {
+				var options = toolFields.TypeConfig.Options
+				for _, selectedToolID := range toolFields.Value {
+					for _, option := range options {
+						if option.ID == selectedToolID {
+							var inx = GetToolIndex(option.Name)
+							if inx != -1 {
+								toolIndexes = append(toolIndexes, inx)
+							}
+							break
+						}
+					}
+				}
+			}
+		}
+
+		var difficultCustomField, okLevel = customFieldMap[team+" Difficult"]
+		if !okLevel || difficultCustomField.Value == nil {
+			fmt.Println("Difficult custom field missing for task:", task.Name)
+			continue
+		}
+
+		var projecCustomField, okProject = customFieldMap["Game Name"]
+		if !okProject || projecCustomField.Value == nil {
+			fmt.Println("Project custom field missing for task:", task.Name)
+			continue
+		}
+
+		var projectField, err = util.CoerceStruct[ClickUpProjectCustomField](projecCustomField)
+		if err != nil {
+			fmt.Println("Error coercing project custom field for task:", task.Name)
+			continue
+		}
+
+		projectIndex := projectField.Value
+		if projectIndex < 0 || projectIndex >= len(projectField.TypeConfig.Options) {
+			fmt.Println("Invalid project index for task:", task.Name)
+			continue
+		}
+		projectName := projectField.TypeConfig.Options[projectIndex].Name
+		spaceIndex := strings.Index(projectName, " ")
+		if spaceIndex != -1 {
+			projectName = projectName[spaceIndex+1:]
+		}
+
+		var assigneeEmail string = ""
+		if len(task.Assignees) > 0 {
+			assigneeIndex := 0
+			if len(task.Assignees) > 1 {
+				assigneeIndex = 1
+			}
+			assigneeEmail = task.Assignees[assigneeIndex].Email
+		}
+
+		var level, ok = anyToInt(difficultCustomField.Value)
+		if !ok {
+			fmt.Println("Error converting level value to int for task:", task.Name)
+			continue
+		}
+		var completedTask = &collectionmodels.CompletedTask{
+			TaskID:     task.Id,
+			TaskName:   task.Name,
+			AssigneeID: assigneeEmail,
+			Tool:       toolIndexes,
+			Level:      level,
+			Project:    projectName,
+			Team:       team,
+			DoneDate:   GetMondayAtNineAM(),
+		}
+		completedTasks = append(completedTasks, completedTask)
+	}
+	return completedTasks
+}
+
+func GetTaskForConcept() []*collectionmodels.CompletedTask {
+	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), false)
+	if err != nil {
+		fmt.Println("Error fetching ClickUp task list:", err)
+		return nil
 	}
 
 	fmt.Printf("Fetched %d completed tasks from ClickUp.\n", len(res))
 
+	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if locErr != nil {
+		locationVN = time.FixedZone("ICT", 7*60*60)
+	}
+	nowVN := time.Now().In(locationVN)
+	// Window: 00:01 Tuesday last week -> 23:59 Monday this week (end-exclusive: Tuesday 00:00 this week)
+	weekday := nowVN.Weekday()
+	daysSinceTuesday := (int(weekday) - int(time.Tuesday) + 7) % 7
+	thisWeekTuesdayStart := time.Date(nowVN.Year(), nowVN.Month(), nowVN.Day(), 0, 0, 0, 0, locationVN).AddDate(0, 0, -daysSinceTuesday)
+	windowEndExclusive := thisWeekTuesdayStart
+	windowStartInclusive := thisWeekTuesdayStart.AddDate(0, 0, -7).Add(1 * time.Minute)
+
+	var completedTasks []*collectionmodels.CompletedTask
+
 	for _, task := range res {
-		fmt.Printf("Task ID: %s, Name: %s, Date Done: %s\n", task.Id, task.Name, task.DateDone)
+		debugSkip := func(reason string, err error) {
+			if err != nil {
+				log.Printf("[ClickUp][Concept] skip task id=%s name=%q reason=%s err=%v", task.Id, task.Name, reason, err)
+				return
+			}
+			log.Printf("[ClickUp][Concept] skip task id=%s name=%q reason=%s", task.Id, task.Name, reason)
+		}
+
+		fmt.Printf("Task ID: %s, Name: %s\n", task.Id, task.Name)
+
+		var customFieldMap = util.IndexBy(task.CustomFields, func(cf *ClickUpCustomField) string {
+			return cf.Name
+		})
+
+		var doneConceptCustomField, ok = customFieldMap["Done Concept"]
+		if !ok {
+			debugSkip("missing custom field: Done Concept", nil)
+			continue
+		}
+		isDoneConcept := false
+		if doneConceptCustomField.Value != nil {
+			isDoneConcept = doneConceptCustomField.Value.(string) == "true"
+		}
+		fmt.Printf("Done Concept value: %v\n", isDoneConcept)
+		if !isDoneConcept {
+			debugSkip("Done Concept not set/false/empty", nil)
+			continue
+		}
+
+		dayTickDoneCustomField, ok := customFieldMap["Ngày tick Done Concept"]
+		if !ok || dayTickDoneCustomField.Value == nil {
+			debugSkip("missing custom field: Ngày tick Done Concept", nil)
+			continue
+		}
+
+		taskDoneDate := UnixMillisToTimeStr(dayTickDoneCustomField.Value.(string)).In(locationVN)
+
+		fmt.Printf("Task Done Date: %v , Before %v , After %v\n", taskDoneDate, windowStartInclusive, windowEndExclusive)
+
+		if taskDoneDate.Before(windowStartInclusive) || !taskDoneDate.Before(windowEndExclusive) {
+			debugSkip("task.DateDone outside Tue->Mon window", nil)
+			continue
+		}
+
+		var toolIndexes []int
+		if toolCustomField, ok := customFieldMap["Tool/CTST Concept"]; ok && toolCustomField != nil {
+			toolFields, err := util.CoerceStruct[ClickUpToolCustomField](toolCustomField)
+			if err != nil {
+				debugSkip("failed to parse Tool/CTST Concept custom field", err)
+			} else {
+				var options = toolFields.TypeConfig.Options
+				for _, selectedToolID := range toolFields.Value {
+					for _, option := range options {
+						if option.ID == selectedToolID {
+							var inx = GetToolIndex(option.Name)
+							if inx != -1 {
+								toolIndexes = append(toolIndexes, inx)
+							}
+							break
+						}
+					}
+				}
+			}
+		}
+
+		var conceptDifficultCustomField, okLevel = customFieldMap["Concept Difficult"]
+		if !okLevel || conceptDifficultCustomField.Value == nil {
+			debugSkip("missing custom field: Concept Difficult", nil)
+			continue
+		}
+
+		var projecCustomField, okProject = customFieldMap["Game Name"]
+		if !okProject || projecCustomField.Value == nil {
+			debugSkip("missing custom field: Game Name", nil)
+			continue
+		}
+
+		var projectField, err = util.CoerceStruct[ClickUpProjectCustomField](projecCustomField)
+		if err != nil {
+			debugSkip("failed to parse Game Name custom field", err)
+			continue
+		}
+
+		projectIndex := projectField.Value
+		if projectIndex < 0 || projectIndex >= len(projectField.TypeConfig.Options) {
+			debugSkip(fmt.Sprintf("invalid Game Name index: %d", projectIndex), nil)
+			continue
+		}
+		projectName := projectField.TypeConfig.Options[projectIndex].Name
+		spaceIndex := strings.Index(projectName, " ")
+		if spaceIndex != -1 {
+			projectName = projectName[spaceIndex+1:]
+		}
+
+		level, ok := anyToInt(conceptDifficultCustomField.Value)
+		if !ok {
+			debugSkip("failed to convert Concept Difficult value to int", nil)
+			continue
+		}
+		assigneeEmail := ""
+		if len(task.Assignees) > 0 {
+			assigneeIndex := 0
+			if len(task.Assignees) > 1 {
+				assigneeIndex = 1
+			}
+			assigneeEmail = task.Assignees[assigneeIndex].Email
+		}
+		var completedTask = &collectionmodels.CompletedTask{
+			TaskID:     task.Id,
+			TaskName:   task.Name,
+			AssigneeID: assigneeEmail,
+			Tool:       toolIndexes,
+			Level:      level,
+			Project:    projectName,
+			Team:       "Concept",
+			DoneDate:   GetMondayAtNineAM(),
+		}
+		completedTasks = append(completedTasks, completedTask)
+	}
+	fmt.Printf("Total processed completed tasks for Concept: %d\n", len(completedTasks))
+	return completedTasks
+}
+
+func GetToolIndex(toolName string) int {
+	re := regexp.MustCompile(`^\d+`)
+	match := re.FindString(toolName)
+
+	if match != "" {
+		num, _ := strconv.Atoi(match)
+		return num
+	}
+	return -1
+}
+
+func GetMondayAtNineAM() time.Time {
+	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if locErr != nil {
+		locationVN = time.FixedZone("ICT", 7*60*60)
+	}
+	nowVN := time.Now().In(locationVN)
+	weekday := int(nowVN.Weekday())
+	daysSinceMonday := (weekday + 6) % 7
+	mondayDate := nowVN.AddDate(0, 0, -daysSinceMonday)
+	thisMondayAtNine := time.Date(mondayDate.Year(), mondayDate.Month(), mondayDate.Day(), 9, 0, 0, 0, locationVN)
+	return thisMondayAtNine
+}
+
+func anyToInt(v any) (int, bool) {
+	switch t := v.(type) {
+	case int:
+		return t, true
+	case int64:
+		return int(t), true
+	case float64:
+		// encoding/json decodes numbers into float64 when the destination is `any`.
+		return int(t), true
+	case json.Number:
+		i64, err := t.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(i64), true
+	case string:
+		if t == "" {
+			return 0, false
+		}
+		i, err := strconv.Atoi(t)
+		if err != nil {
+			return 0, false
+		}
+		return i, true
+	default:
+		return 0, false
 	}
 }

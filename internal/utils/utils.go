@@ -1,5 +1,7 @@
 package utils
 
+import "encoding/json"
+
 func IndexOf[T comparable](slice []T, item T) int {
 	for i, v := range slice {
 		if v == item {
@@ -45,4 +47,24 @@ func IndexBy[T any, K comparable](items []T, keyFn func(*T) K) map[K]*T {
 	}
 
 	return index
+}
+
+// CoerceStruct decodes an arbitrary value (typically `any`, map[string]any, or
+// an anonymous struct) into the destination struct type T via JSON round-trip.
+//
+// This is a pragmatic way to "cast" when the source is dynamic (e.g. unmarshalled
+// JSON fields stored as `any`).
+func CoerceStruct[T any](value any) (T, error) {
+	var out T
+	if value == nil {
+		return out, nil
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return out, err
+	}
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return out, err
+	}
+	return out, nil
 }
