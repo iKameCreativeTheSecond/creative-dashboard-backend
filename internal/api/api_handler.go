@@ -976,6 +976,31 @@ func HandlePostProjectIssues(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(issues)
 }
 
+func HandleAdminRole(w http.ResponseWriter, r *http.Request) {
+	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
+	if !ok || teamRoles == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// if contains Admin role, allow all teams
+	isAdmin := false
+	for _, role := range teamRoles {
+		if role.Role == "admin" {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		http.Error(w, "Forbidden: Admins only", http.StatusForbidden)
+		return
+	}
+
+	//return a response
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Admin access granted"}`))
+}
+
 /// =========== End Project Issues Handler =================
 /// ========================================================
 
@@ -1019,6 +1044,8 @@ func Init() {
 	http.Handle("/post/update-weekly-order", CORSMiddleware(http.HandlerFunc(HandleUpdateWeeklyOrder)))
 	http.Handle("/post/add-new-weekly-order", CORSMiddleware(http.HandlerFunc(HandleAddNewWeeklyOrder)))
 	http.Handle("/post/delete-weekly-order", CORSMiddleware(http.HandlerFunc(HandleDeleteWeeklyOrder)))
+
+	http.Handle("/get/admin-role", CORSMiddleware(http.HandlerFunc(HandleAdminRole)))
 	/// =======================================================
 
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
