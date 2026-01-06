@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"performance-dashboard-backend/internal/database/constants"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -38,9 +40,9 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 			{Key: "project", Value: 1},
 			{Key: "start_week", Value: 1},
 			{Key: "orders", Value: bson.A{
-				bson.D{{Key: "team", Value: "Art Creative"}, {Key: "count", Value: bson.D{{Key: "$add", Value: bson.A{"$art_cpp", "$art_icon", "$art_banner"}}}}},
-				bson.D{{Key: "team", Value: "Video Creative"}, {Key: "count", Value: "$video"}},
-				bson.D{{Key: "team", Value: "PLA Creative"}, {Key: "count", Value: "$playable"}},
+				bson.D{{Key: "team", Value: constants.Art}, {Key: "count", Value: bson.D{{Key: "$add", Value: bson.A{"$art_cpp", "$art_icon", "$art_banner"}}}}},
+				bson.D{{Key: "team", Value: constants.Video}, {Key: "count", Value: "$video"}},
+				bson.D{{Key: "team", Value: constants.Playable}, {Key: "count", Value: "$playable"}},
 			}},
 		}}},
 		// 3. Unwind orders
@@ -94,9 +96,9 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 					{Key: "assignee", Value: bson.D{
 						{Key: "$switch", Value: bson.D{
 							{Key: "branches", Value: bson.A{
-								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "Art Creative"}}}}, {Key: "then", Value: "$art"}},
-								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "Video Creative"}}}}, {Key: "then", Value: "$video"}},
-								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", "PLA Creative"}}}}, {Key: "then", Value: "$pla"}},
+								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", constants.Art}}}}, {Key: "then", Value: "$art"}},
+								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", constants.Video}}}}, {Key: "then", Value: "$video"}},
+								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", constants.Playable}}}}, {Key: "then", Value: "$pla"}},
 							}},
 							{Key: "default", Value: nil},
 						}},
