@@ -20,9 +20,10 @@ type ProjectIssue struct {
 	Difference     int                `bson:"difference"`
 	Team           string             `bson:"team"`
 	OrderCount     int                `bson:"order_count"`
+	Note           string             `bson:"note,omitempty"`
 }
 
-func GetProjectIssues(client *mongo.Client, dbName, collectionName string, startTime, endTime time.Time) (*[]ProjectIssue, error) {
+func GetProjectIssues(client *mongo.Client, dbName, collectionName string, startTime, endTime time.Time) ([]ProjectIssue, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collectionName)
@@ -157,5 +158,68 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 		return nil, err
 	}
 
+	return results, nil
+}
+
+func InsertProjectIssue(client *mongo.Client, dbName, collectionName string, issue ProjectIssue) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collectionName)
+	_, err := collection.InsertOne(ctx, issue)
+	return err
+}
+
+func InsertProjectIssues(client *mongo.Client, dbName, collectionName string, issues []ProjectIssue) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collectionName)
+	var docs []interface{}
+	for _, issue := range issues {
+		docs = append(docs, issue)
+	}
+	_, err := collection.InsertMany(ctx, docs)
+	return err
+}
+
+func DeleteProjectIssue(client *mongo.Client, dbName, collectionName string, id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collectionName)
+	objID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return err
+	}
+	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
+	return err
+}
+
+func UpdateProjectIssue(client *mongo.Client, dbName, collectionName string, issue ProjectIssue) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collectionName)
+	_, err := collection.UpdateOne(ctx, bson.M{"_id": issue.ID.String()}, bson.M{"$set": issue})
+	return err
+}
+
+func GetProjectIssueFromBD(client *mongo.Client, dbName, collectionName string, startTime, endTime time.Time) (*[]ProjectIssue, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collectionName)
+	filter := bson.M{
+		"start_week": bson.M{
+			"$gte": startTime,
+			"$lte": endTime,
+		},
+	}
+	cursor, err := collection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []ProjectIssue
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
 	return &results, nil
 }

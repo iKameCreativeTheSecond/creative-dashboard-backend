@@ -2,6 +2,7 @@ package db_handler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
@@ -819,4 +820,22 @@ func splitByMonday(startDate, endDate time.Time) [][2]time.Time {
 	}
 
 	return ranges
+}
+
+func SaveProjectReport() error {
+
+	var modayAtMidnight = time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Now().Location())
+	var lastWeekMonday = modayAtMidnight.AddDate(0, 0, -7*1)
+	issues, err := collectionmodels.GetProjectIssues(client, os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), lastWeekMonday, modayAtMidnight)
+	if err != nil {
+		fmt.Println("Error getting project issues:", err)
+		return err
+	}
+
+	err = collectionmodels.InsertProjectIssues(client, os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_PROJECT_REPORT"), issues)
+	if err != nil {
+		fmt.Println("Error inserting project issues:", err)
+		return err
+	}
+	return nil
 }

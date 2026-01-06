@@ -159,10 +159,12 @@ func ScheduleWeeklyTaskSync() {
 }
 
 func SyncronizeWeeklyClickUpTasks() {
-	SyncTaskForConcept()
-	SyncTaskForPlayable()
-	SyncTaskForArt()
-	SyncTaskForVideo()
+	go SyncTaskForConcept()
+	go SyncTaskForPlayable()
+	go SyncTaskForArt()
+	go SyncTaskForVideo()
+
+	go database.SaveProjectReport()
 }
 
 func SyncTaskForConcept() {

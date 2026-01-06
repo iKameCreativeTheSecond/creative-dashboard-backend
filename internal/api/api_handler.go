@@ -954,7 +954,7 @@ func HandlePostProjectIssues(w http.ResponseWriter, r *http.Request) {
 	endWeekStr := body["EndDate"].(string)
 	endWeek, _ := time.Parse(time.RFC3339, endWeekStr)
 
-	issues, err := collectionmodels.GetProjectIssues(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), startWeek, endWeek)
+	issues, err := collectionmodels.GetProjectIssueFromBD(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_PROJECT_REPORT"), startWeek, endWeek)
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
