@@ -2,9 +2,8 @@ package collectionmodels
 
 import (
 	"context"
+	"fmt"
 	"time"
-
-	"performance-dashboard-backend/internal/database/constants"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -15,135 +14,104 @@ type ProjectIssue struct {
 	ID             primitive.ObjectID `bson:"_id,omitempty"`
 	Project        string             `bson:"project"`
 	StartWeek      time.Time          `bson:"start_week"`
+	TaskType       string             `bson:"task_type"`
 	CompletedCount int                `bson:"completed_count"`
 	Assignees      []string           `bson:"assignees"`
 	Difference     int                `bson:"difference"`
-	Team           string             `bson:"team"`
+	Team           string             `bson:"team,omitempty"`
 	OrderCount     int                `bson:"order_count"`
 	Note           string             `bson:"note,omitempty"`
 }
 
 func GetProjectIssues(client *mongo.Client, dbName, collectionName string, startTime, endTime time.Time) ([]ProjectIssue, error) {
+
+	projects, err := GetAllOrderProjects(client, dbName, collectionName, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	var allIssues []ProjectIssue
+	for _, proj := range projects {
+		issues, err := GetProjectIssue(client, dbName, collectionName, proj.Project, startTime, endTime)
+		if err != nil {
+			fmt.Println("Error getting project issue for project:", proj.Project, "error:", err)
+			continue
+		}
+		allIssues = append(allIssues, issues...)
+	}
+	return allIssues, nil
+}
+
+func GetProjectIssue(client *mongo.Client, dbName, collectionName string, project string, startTime, endTime time.Time) ([]ProjectIssue, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collectionName)
 
+	matchStage := bson.D{
+		{Key: "start_week", Value: bson.D{
+			{Key: "$gte", Value: startTime},
+			{Key: "$lte", Value: endTime},
+		}},
+	}
+	if project != "" {
+		matchStage = append(matchStage, bson.E{Key: "project", Value: project})
+	}
+
 	pipeline := mongo.Pipeline{
-		// 1. Filter weekly orders by date range (ví dụ tháng 9/2025)
-		{{Key: "$match", Value: bson.D{
-			{Key: "start_week", Value: bson.D{
-				{Key: "$gte", Value: startTime},
-				{Key: "$lte", Value: endTime},
-			}},
-		}}},
-		// 2. Build orders
+		{{Key: "$match", Value: matchStage}},
 		{{Key: "$project", Value: bson.D{
 			{Key: "project", Value: 1},
 			{Key: "start_week", Value: 1},
 			{Key: "orders", Value: bson.A{
-				bson.D{{Key: "team", Value: constants.Art}, {Key: "count", Value: bson.D{{Key: "$add", Value: bson.A{"$art_cpp", "$art_icon", "$art_banner"}}}}},
-				bson.D{{Key: "team", Value: constants.Video}, {Key: "count", Value: "$video"}},
-				bson.D{{Key: "team", Value: constants.Playable}, {Key: "count", Value: "$playable"}},
+				bson.D{{Key: "task_type", Value: "art_cpp"}, {Key: "order_count", Value: "$art_cpp"}},
+				bson.D{{Key: "task_type", Value: "art_icon"}, {Key: "order_count", Value: "$art_icon"}},
+				bson.D{{Key: "task_type", Value: "art_banner"}, {Key: "order_count", Value: "$art_banner"}},
+				bson.D{{Key: "task_type", Value: "playable"}, {Key: "order_count", Value: "$playable"}},
+				bson.D{{Key: "task_type", Value: "video"}, {Key: "order_count", Value: "$video"}},
 			}},
 		}}},
-		// 3. Unwind orders
 		{{Key: "$unwind", Value: "$orders"}},
-		// 4. Lookup completed-task (theo project, team, done_date thuộc tuần)
 		{{Key: "$lookup", Value: bson.D{
 			{Key: "from", Value: "completed-task"},
 			{Key: "let", Value: bson.D{
-				{Key: "proj", Value: "$project"},
-				{Key: "team", Value: "$orders.team"},
-				{Key: "weekStart", Value: "$start_week"},
+				{Key: "projectName", Value: "$project"},
+				{Key: "taskType", Value: "$orders.task_type"},
 			}},
 			{Key: "pipeline", Value: mongo.Pipeline{
 				{{Key: "$match", Value: bson.D{
 					{Key: "$expr", Value: bson.D{
 						{Key: "$and", Value: bson.A{
-							bson.D{{Key: "$eq", Value: bson.A{"$project", "$$proj"}}},
-							bson.D{{Key: "$eq", Value: bson.A{"$team", "$$team"}}},
-							// Lọc theo tuần
-							bson.D{{Key: "$gte", Value: bson.A{"$done_date", "$$weekStart"}}},
-							bson.D{{Key: "$lt", Value: bson.A{
-								"$done_date",
-								bson.D{{Key: "$dateAdd", Value: bson.D{
-									{Key: "startDate", Value: "$$weekStart"},
-									{Key: "unit", Value: "day"},
-									{Key: "amount", Value: 7},
-								}}},
-							}}},
-						}},
-					}},
-				}}},
-				{{Key: "$group", Value: bson.D{
-					{Key: "_id", Value: "$assignee_id"},
-					{Key: "completed_count", Value: bson.D{{Key: "$sum", Value: 1}}},
-				}}},
-			}},
-			{Key: "as", Value: "completed"},
-		}}},
-		// 5. Lookup fallback project-details
-		{{Key: "$lookup", Value: bson.D{
-			{Key: "from", Value: "project-details"},
-			{Key: "let", Value: bson.D{
-				{Key: "proj", Value: "$project"},
-				{Key: "team", Value: "$orders.team"},
-			}},
-			{Key: "pipeline", Value: mongo.Pipeline{
-				{{Key: "$match", Value: bson.D{
-					{Key: "$expr", Value: bson.D{{Key: "$eq", Value: bson.A{"$project", "$$proj"}}}},
-				}}},
-				{{Key: "$project", Value: bson.D{
-					{Key: "assignee", Value: bson.D{
-						{Key: "$switch", Value: bson.D{
-							{Key: "branches", Value: bson.A{
-								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", constants.Art}}}}, {Key: "then", Value: "$art"}},
-								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", constants.Video}}}}, {Key: "then", Value: "$video"}},
-								bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$$team", constants.Playable}}}}, {Key: "then", Value: "$pla"}},
-							}},
-							{Key: "default", Value: nil},
+							bson.D{{Key: "$eq", Value: bson.A{"$project", "$$projectName"}}},
+							bson.D{{Key: "$eq", Value: bson.A{"$task_type", "$$taskType"}}},
+							bson.D{{Key: "$gte", Value: bson.A{"$done_date", startTime}}},
+							bson.D{{Key: "$lte", Value: bson.A{"$done_date", endTime}}},
 						}},
 					}},
 				}}},
 			}},
-			{Key: "as", Value: "fallback"},
+			{Key: "as", Value: "completed_tasks"},
 		}}},
-		// 6. Add completed_count + assignees (fallback nếu rỗng)
 		{{Key: "$addFields", Value: bson.D{
-			{Key: "completed_count", Value: bson.D{{Key: "$sum", Value: "$completed.completed_count"}}},
-			{Key: "assignees", Value: bson.D{
-				{Key: "$cond", Value: bson.D{
-					{Key: "if", Value: bson.D{{Key: "$gt", Value: bson.A{bson.D{{Key: "$size", Value: "$completed"}}, 0}}}},
-					{Key: "then", Value: "$completed._id"},
-					{Key: "else", Value: bson.D{
-						{Key: "$map", Value: bson.D{
-							{Key: "input", Value: "$fallback"},
-							{Key: "as", Value: "f"},
-							{Key: "in", Value: "$$f.assignee"},
-						}},
-					}},
-				}},
-			}},
+			{Key: "completed_count", Value: bson.D{{Key: "$size", Value: "$completed_tasks"}}},
+			{Key: "assignees", Value: bson.D{{Key: "$setUnion", Value: bson.A{"$completed_tasks.assignee_id"}}}},
 		}}},
-		// 7. Calculate difference
-		{{Key: "$addFields", Value: bson.D{
-			{Key: "difference", Value: bson.D{
-				{Key: "$subtract", Value: bson.A{"$orders.count", bson.D{{Key: "$ifNull", Value: bson.A{"$completed_count", 0}}}}},
-			}},
-		}}},
-		// 8. Only keep where difference > 0
-		{{Key: "$match", Value: bson.D{
-			{Key: "difference", Value: bson.D{{Key: "$gt", Value: 0}}},
-		}}},
-		// 9. Final projection
 		{{Key: "$project", Value: bson.D{
+			{Key: "_id", Value: 0},
 			{Key: "project", Value: 1},
 			{Key: "start_week", Value: 1},
-			{Key: "team", Value: "$orders.team"},
-			{Key: "order_count", Value: "$orders.count"},
+			{Key: "task_type", Value: "$orders.task_type"},
+			{Key: "order_count", Value: "$orders.order_count"},
 			{Key: "completed_count", Value: 1},
-			{Key: "difference", Value: 1},
 			{Key: "assignees", Value: 1},
+			{Key: "difference", Value: bson.D{{Key: "$subtract", Value: bson.A{"$completed_count", "$orders.order_count"}}}},
+			{Key: "note", Value: bson.D{{Key: "$cond", Value: bson.A{
+				bson.D{{Key: "$gt", Value: bson.A{"$completed_count", "$orders.order_count"}}},
+				"OVER",
+				bson.D{{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$lt", Value: bson.A{"$completed_count", "$orders.order_count"}}},
+					"UNDER",
+					"MATCH",
+				}}},
+			}}}},
 		}}},
 	}
 

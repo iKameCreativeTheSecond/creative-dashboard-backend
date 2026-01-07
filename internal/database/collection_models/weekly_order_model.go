@@ -22,6 +22,10 @@ type WeeklyOrder struct {
 	Video     int                `bson:"video"`
 }
 
+type WeeklyOrderProject struct {
+	Project string `bson:"project" json:"project"`
+}
+
 func InsertWeeklyOrder(client *mongo.Client, dbName, collName string, order *WeeklyOrder) (primitive.ObjectID, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -87,6 +91,30 @@ func GetAllWeeklyOrders(client *mongo.Client, dbName, collName string) ([]*Weekl
 	}
 	defer cursor.Close(ctx)
 	var results []*WeeklyOrder
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func GetAllOrderProjects(client *mongo.Client, dbName, collName string, startDate, endDate time.Time) ([]*WeeklyOrderProject, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	collection := client.Database(dbName).Collection(collName)
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "start_week", Value: bson.D{{Key: "$gte", Value: startDate}, {Key: "$lte", Value: endDate}}}}}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$project"}}}},
+		{{Key: "$project", Value: bson.D{{Key: "_id", Value: 0}, {Key: "project", Value: "$_id"}}}},
+	}
+
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []*WeeklyOrderProject
 	if err = cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
