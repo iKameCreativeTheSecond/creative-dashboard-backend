@@ -149,7 +149,7 @@ func UnixMillisToTimeStr(msStr string) time.Time {
 
 func Init() {
 	// go ScheduleWeeklyTaskSync()
-	go SyncronizeWeeklyClickUpTasks()
+	// go SyncronizeWeeklyClickUpTasks()
 }
 
 func ScheduleWeeklyTaskSync() {
@@ -170,7 +170,7 @@ func ScheduleWeeklyTaskSync() {
 func SyncronizeWeeklyClickUpTasks() {
 	// go SyncTaskForConcept()
 	// go SyncTaskForPlayable()
-	go SyncTaskForArt()
+	// go SyncTaskForArt()
 	// go SyncTaskForVideo()
 
 	// go database.SaveProjectReport()
