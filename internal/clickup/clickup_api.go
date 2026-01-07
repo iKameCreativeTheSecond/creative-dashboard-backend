@@ -170,7 +170,7 @@ func ScheduleWeeklyTaskSync() {
 func SyncronizeWeeklyClickUpTasks() {
 	// go SyncTaskForConcept()
 	// go SyncTaskForPlayable()
-	// go SyncTaskForArt()
+	go SyncTaskForArt()
 	// go SyncTaskForVideo()
 
 	// go database.SaveProjectReport()
@@ -229,6 +229,13 @@ func SyncTaskForArt() {
 			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task4)
 		}
 	}
+
+	var task5 = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), ASSET)
+	if task5 != nil {
+		if len(task5) > 0 {
+			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task5)
+		}
+	}
 }
 
 func SyncTaskForVideo() {
@@ -249,7 +256,11 @@ func SyncTaskForVideo() {
 
 func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels.CompletedTask {
 
-	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true, tag, true)
+	var includeSubtask bool = false
+	if team == "Art" || team == "Video" {
+		includeSubtask = true
+	}
+	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true, tag, includeSubtask)
 	if err != nil {
 		fmt.Println("Error fetching ClickUp task list:", err)
 		return nil

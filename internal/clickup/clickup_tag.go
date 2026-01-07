@@ -7,5 +7,6 @@ const (
 	CPP          = "cpp"
 	ICON         = "icon"
 	BANNER       = "banner"
+	ASSET        = "asset"
 	CONCEPT_DONE = "ccd"
 )
