@@ -20,7 +20,7 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-func FetchTasksFromSpace(token string, spaceID string, isCompleted bool, tag string, includeSubtask bool) ([]ClickUpTask, error) {
+func FetchTasksFromSpace(token string, spaceID string, isCompleted bool, tag string, includeSubtask bool, fromDate int64) ([]ClickUpTask, error) {
 
 	url := fmt.Sprintf("https://api.clickup.com/api/v2/space/%s/list", spaceID)
 
@@ -62,7 +62,7 @@ func FetchTasksFromSpace(token string, spaceID string, isCompleted bool, tag str
 	// Fetch tasks from each list
 	var allTasks []ClickUpTask
 	for _, list := range listsResp.Lists {
-		tasks, err := FetchTaskList(token, list.Id, isCompleted, tag, includeSubtask)
+		tasks, err := FetchTaskList(token, list.Id, isCompleted, tag, includeSubtask, fromDate)
 		if err != nil {
 			fmt.Printf("Error fetching tasks from list %s: %v\n", list.Id, err)
 			continue
@@ -73,18 +73,21 @@ func FetchTasksFromSpace(token string, spaceID string, isCompleted bool, tag str
 	return allTasks, nil
 }
 
-func FetchTaskList(token string, listID string, isCompleted bool, tag string, includeSubtask bool) ([]ClickUpTask, error) {
+func FetchTaskList(token string, listID string, isCompleted bool, tag string, includeSubtask bool, fromDate int64) ([]ClickUpTask, error) {
 	client := &http.Client{}
 	page := 0
 	var allTasks []ClickUpTask
 
 	for {
-		params := []string{"include_closed=true", "archived=false"}
+		params := []string{"include_closed=true", "archived=false", fmt.Sprintf("page=%d", page)}
 		if isCompleted {
 			params = append(params, "statuses[]=COMPLETED")
 		}
 		if includeSubtask {
 			params = append(params, "subtasks=true")
+		}
+		if fromDate > 0 {
+			params = append(params, fmt.Sprintf("date_done_gt=%d", fromDate))
 		}
 		requestURL := fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?%s", listID, strings.Join(params, "&"))
 
@@ -149,7 +152,7 @@ func UnixMillisToTimeStr(msStr string) time.Time {
 
 func Init() {
 	// go ScheduleWeeklyTaskSync()
-	// go SyncronizeWeeklyClickUpTasks()
+	go SyncronizeWeeklyClickUpTasks()
 }
 
 func ScheduleWeeklyTaskSync() {
@@ -202,40 +205,44 @@ func SyncTaskForPlayable() {
 }
 
 func SyncTaskForArt() {
-	var tasks = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_ART"), "")
-	if tasks != nil {
-		if len(tasks) > 0 {
-			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
-		}
+
+	var tasks = []*collectionmodels.CompletedTask{}
+
+	var task1 = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_ART"), "")
+	if task1 != nil {
+		tasks = append(tasks, task1...)
 	}
 
 	var task2 = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), CPP)
 	if task2 != nil {
-		if len(task2) > 0 {
-			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task2)
-		}
+		tasks = append(tasks, task2...)
 	}
 
 	var task3 = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), ICON)
 	if task3 != nil {
-		if len(task3) > 0 {
-			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task3)
-		}
+		tasks = append(tasks, task3...)
 	}
 
 	var task4 = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), BANNER)
 	if task4 != nil {
-		if len(task4) > 0 {
-			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task4)
-		}
+		tasks = append(tasks, task4...)
 	}
 
 	var task5 = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), ASSET)
 	if task5 != nil {
-		if len(task5) > 0 {
-			collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), task5)
-		}
+		tasks = append(tasks, task5...)
 	}
+
+	var task6 = GetTaskForTeam("Art", os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), ART)
+	if task6 != nil {
+		task6 = dedupeCompletedTasksByTaskName(task6)
+		tasks = append(tasks, task6...)
+	}
+
+	if len(tasks) > 0 {
+		collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
+	}
+
 }
 
 func SyncTaskForVideo() {
@@ -260,23 +267,25 @@ func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels
 	if team == "Art" || team == "Video" {
 		includeSubtask = true
 	}
-	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true, tag, includeSubtask)
-	if err != nil {
-		fmt.Println("Error fetching ClickUp task list:", err)
-		return nil
-	}
 
 	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
 	if locErr != nil {
 		locationVN = time.FixedZone("ICT", 7*60*60)
 	}
 	nowVN := time.Now().In(locationVN)
-	// Window: 00:01 Tuesday last week -> 23:59 Monday this week (end-exclusive: Tuesday 00:00 this week)
+	// Window start: most recent Tuesday 00:00 (local VN time)
 	weekday := nowVN.Weekday()
 	daysSinceTuesday := (int(weekday) - int(time.Tuesday) + 7) % 7
 	thisWeekTuesdayStart := time.Date(nowVN.Year(), nowVN.Month(), nowVN.Day(), 0, 0, 0, 0, locationVN).AddDate(0, 0, -daysSinceTuesday)
-	// windowEndExclusive := thisWeekTuesdayStart
-	windowStartInclusive := thisWeekTuesdayStart.AddDate(0, 0, -7).Add(1 * time.Minute)
+	windowStartInclusive := thisWeekTuesdayStart
+	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
+	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond)) - 1
+	fmt.Println("Time Window for team", team, "from", windowStartInclusive, "to", nowVN)
+	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true, tag, includeSubtask, windowStartInclusiveMillis)
+	if err != nil {
+		fmt.Println("Error fetching ClickUp task list:", err)
+		return nil
+	}
 
 	var completedTasks []*collectionmodels.CompletedTask
 
@@ -290,10 +299,12 @@ func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels
 			continue
 		}
 
-		taskDoneDate := UnixMillisToTimeStr(task.DateDone).In(locationVN)
-		if taskDoneDate.Before(windowStartInclusive) || taskDoneDate.After(nowVN) {
-			continue
-		}
+		// taskDoneDate := UnixMillisToTimeStr(task.DateDone).In(locationVN)
+		// if taskDoneDate.Before(windowStartInclusive) || taskDoneDate.After(nowVN) {
+
+		// 	fmt.Println("Task done date outside time window for task:", task.Name)
+		// 	continue
+		// }
 
 		var toolIndexes []int
 		if toolCustomField, ok := customFieldMap["Tool/CTST "+team]; ok && toolCustomField != nil {
@@ -361,8 +372,14 @@ func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels
 
 		var taskType string = strings.ToLower(team)
 		if team == "Art" {
-			taskType = "art_" + strings.ToLower(tag)
+			if tag == "" {
+				taskType = "art_asset"
+			} else {
+				fmt.Println("Tag for Art task:", tag)
+				taskType = "art_" + strings.ToLower(tag)
+			}
 		}
+		fmt.Println("Task type completed " + taskType + "\n")
 
 		var completedTask = &collectionmodels.CompletedTask{
 			TaskID:     task.Id,
@@ -381,25 +398,24 @@ func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels
 }
 
 func GetTaskForConcept() []*collectionmodels.CompletedTask {
-	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), false, CONCEPT_DONE, true)
-	if err != nil {
-		fmt.Println("Error fetching ClickUp task list:", err)
-		return nil
-	}
-
-	fmt.Printf("Fetched %d completed tasks from ClickUp.\n", len(res))
 
 	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
 	if locErr != nil {
 		locationVN = time.FixedZone("ICT", 7*60*60)
 	}
 	nowVN := time.Now().In(locationVN)
-	// Window: 00:01 Tuesday last week -> 23:59 Monday this week (end-exclusive: Tuesday 00:00 this week)
+	// Window start: most recent Tuesday 00:00 (local VN time)
 	weekday := nowVN.Weekday()
 	daysSinceTuesday := (int(weekday) - int(time.Tuesday) + 7) % 7
 	thisWeekTuesdayStart := time.Date(nowVN.Year(), nowVN.Month(), nowVN.Day(), 0, 0, 0, 0, locationVN).AddDate(0, 0, -daysSinceTuesday)
-	// windowEndExclusive := thisWeekTuesdayStart
-	windowStartInclusive := thisWeekTuesdayStart.AddDate(0, 0, -7).Add(1 * time.Minute)
+	windowStartInclusive := thisWeekTuesdayStart
+	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
+	windowStartInclusiveMillis := (windowStartInclusive.UnixNano() / int64(time.Millisecond)) - 1
+	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), false, CONCEPT_DONE, true, windowStartInclusiveMillis)
+	if err != nil {
+		fmt.Println("Error fetching ClickUp task list:", err)
+		return nil
+	}
 
 	var completedTasks []*collectionmodels.CompletedTask
 
@@ -424,15 +440,7 @@ func GetTaskForConcept() []*collectionmodels.CompletedTask {
 			continue
 		}
 
-		taskDoneDate := UnixMillisToTimeStr(dayTickDoneCustomField.Value.(string)).In(locationVN)
-
-		fmt.Printf("Task Done Date: %v , Before %v , After %v\n", taskDoneDate, windowStartInclusive, nowVN)
-
-		if taskDoneDate.Before(windowStartInclusive) || taskDoneDate.After(nowVN) {
-			debugSkip("task.DateDone outside time window", nil)
-			continue
-		}
-
+		// taskDoneDate := UnixMillisToTimeStr(dayTickDoneCustomField.Value.(string)).In(locationVN)
 		var toolIndexes []int
 		if toolCustomField, ok := customFieldMap["Tool/CTST Concept"]; ok && toolCustomField != nil {
 			toolFields, err := util.CoerceStruct[ClickUpToolCustomField](toolCustomField)
@@ -558,4 +566,31 @@ func anyToInt(v any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func dedupeCompletedTasksByTaskName(tasks []*collectionmodels.CompletedTask) []*collectionmodels.CompletedTask {
+	if len(tasks) == 0 {
+		return tasks
+	}
+
+	seen := make(map[string]struct{}, len(tasks))
+	out := make([]*collectionmodels.CompletedTask, 0, len(tasks))
+
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		nameKey := strings.ToLower(strings.TrimSpace(task.TaskName))
+		if nameKey == "" {
+			out = append(out, task)
+			continue
+		}
+		if _, ok := seen[nameKey]; ok {
+			continue
+		}
+		seen[nameKey] = struct{}{}
+		out = append(out, task)
+	}
+
+	return out
 }
