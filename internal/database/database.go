@@ -823,10 +823,31 @@ func splitByMonday(startDate, endDate time.Time) [][2]time.Time {
 }
 
 func SaveProjectReport() error {
+	nowLoc, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if locErr != nil {
+		nowLoc = time.FixedZone("Asia/Ho_Chi_Minh", 7*60*60)
+	}
 
-	var modayAtMidnight = time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Now().Location())
-	var lastWeekMonday = modayAtMidnight.AddDate(0, 0, -7*1)
-	issues, err := collectionmodels.GetProjectIssues(client, os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), lastWeekMonday, modayAtMidnight)
+	now := time.Now().In(nowLoc)
+	todayMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, nowLoc)
+
+	daysSinceMonday := (int(todayMidnight.Weekday()) - int(time.Monday) + 7) % 7
+	thisWeekMondayStart := todayMidnight.AddDate(0, 0, -daysSinceMonday)
+	lastWeekMonday := thisWeekMondayStart.AddDate(0, 0, -7)
+	thisWeekMonday := time.Date(thisWeekMondayStart.Year(), thisWeekMondayStart.Month(), thisWeekMondayStart.Day(), 23, 59, 59, 0, nowLoc)
+
+	// Convert to UTC for MongoDB query
+	lastWeekMondayUTC := lastWeekMonday.UTC()
+	thisWeekMondayUTC := thisWeekMonday.UTC()
+
+	issues, err := collectionmodels.GetProjectIssues(
+		client,
+		os.Getenv("MONGODB_NAME"),
+		os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"),
+		lastWeekMondayUTC,
+		thisWeekMondayUTC,
+	)
+
 	if err != nil {
 		fmt.Println("Error getting project issues:", err)
 		return err

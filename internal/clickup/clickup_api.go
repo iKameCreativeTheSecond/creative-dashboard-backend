@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	database "performance-dashboard-backend/internal/database"
@@ -215,7 +216,7 @@ func UnixMillisToTimeStr(msStr string) time.Time {
 
 func Init() {
 	// go ScheduleWeeklyTaskSync()
-	go SyncronizeWeeklyClickUpTasks()
+	SyncronizeWeeklyClickUpTasks()
 }
 
 func ScheduleWeeklyTaskSync() {
@@ -225,7 +226,7 @@ func ScheduleWeeklyTaskSync() {
 		loc = time.UTC
 	}
 	c := cron.New(cron.WithLocation(loc))
-	_, err = c.AddFunc("59 23 * * 1", SyncronizeWeeklyClickUpTasks)
+	_, err = c.AddFunc("0 1 * * 2", SyncronizeWeeklyClickUpTasks)
 	if err != nil {
 		fmt.Println("Cron add error:", err)
 		return
@@ -234,12 +235,38 @@ func ScheduleWeeklyTaskSync() {
 }
 
 func SyncronizeWeeklyClickUpTasks() {
-	go SyncTaskForConcept()
-	go SyncTaskForPlayable()
-	go SyncTaskForArt()
-	go SyncTaskForVideo()
+	var wg sync.WaitGroup
 
-	// go database.SaveProjectReport()
+	wg.Add(4)
+	fmt.Println("Start sync ClickUp tasks at", time.Now())
+	go func() {
+		defer wg.Done()
+		SyncTaskForConcept()
+	}()
+
+	go func() {
+		defer wg.Done()
+		SyncTaskForPlayable()
+	}()
+
+	go func() {
+		defer wg.Done()
+		SyncTaskForArt()
+	}()
+
+	go func() {
+		defer wg.Done()
+		SyncTaskForVideo()
+	}()
+
+	// Đợi tất cả sync tasks hoàn thành trước khi save report
+	wg.Wait()
+
+	fmt.Println("Completed sync ClickUp tasks at", time.Now())
+
+	database.SaveProjectReport()
+
+	fmt.Println("Completed saving project report at", time.Now())
 }
 
 func SyncTaskForConcept() {
@@ -443,6 +470,10 @@ func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels
 			} else {
 				taskType = "art_" + strings.ToLower(tag)
 			}
+		}
+
+		if taskType == "pla" {
+			taskType = "playable"
 		}
 
 		var completedTask = &collectionmodels.CompletedTask{

@@ -1049,6 +1049,8 @@ func Init() {
 	/// =======================================================
 
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
+
+	// Khởi tạo các background tasks
 	go ClearSessionMapSchedule()
-	go clickup.Init()
+	clickup.Init()
 }
