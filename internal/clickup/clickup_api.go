@@ -273,11 +273,15 @@ func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels
 		locationVN = time.FixedZone("ICT", 7*60*60)
 	}
 	nowVN := time.Now().In(locationVN)
-	// Window start: most recent Tuesday 00:00 (local VN time)
+	// Window start: most recent Tuesday 00:00 (local VN time).
+	// If that Tuesday is too recent (< 5 days ago), use the previous Tuesday instead.
 	weekday := nowVN.Weekday()
 	daysSinceTuesday := (int(weekday) - int(time.Tuesday) + 7) % 7
 	thisWeekTuesdayStart := time.Date(nowVN.Year(), nowVN.Month(), nowVN.Day(), 0, 0, 0, 0, locationVN).AddDate(0, 0, -daysSinceTuesday)
 	windowStartInclusive := thisWeekTuesdayStart
+	if nowVN.Sub(thisWeekTuesdayStart) < 5*24*time.Hour {
+		windowStartInclusive = thisWeekTuesdayStart.AddDate(0, 0, -7)
+	}
 	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
 	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond)) - 1
 	fmt.Println("Time Window for team", team, "from", windowStartInclusive, "to", nowVN)
