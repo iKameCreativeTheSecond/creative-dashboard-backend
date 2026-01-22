@@ -215,8 +215,8 @@ func UnixMillisToTimeStr(msStr string) time.Time {
 }
 
 func Init() {
-	// go ScheduleWeeklyTaskSync()
-	SyncronizeWeeklyClickUpTasks()
+	go ScheduleWeeklyTaskSync()
+	// SyncronizeWeeklyClickUpTasks()
 }
 
 func ScheduleWeeklyTaskSync() {

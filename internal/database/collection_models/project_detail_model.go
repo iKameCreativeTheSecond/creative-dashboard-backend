@@ -66,3 +66,20 @@ func GetAllProjectDetails(client *mongo.Client, dbName, collName string) ([]Proj
 	}
 	return results, nil
 }
+
+func GetProjectDetail(client *mongo.Client, dbName, collName, projectName string) ([]ProjectDetail, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collName)
+	cursor, err := collection.Find(ctx, bson.M{"project": projectName})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []ProjectDetail
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+	return results, nil
+}

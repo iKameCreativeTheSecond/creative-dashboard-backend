@@ -3,6 +3,7 @@ package collectionmodels
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -36,12 +37,14 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 			fmt.Println("Error getting project issue for project:", proj.Project, "error:", err)
 			continue
 		}
-		allIssues = append(allIssues, issues...)
+		for _, issue := range issues {
+			allIssues = append(allIssues, *issue)
+		}
 	}
 	return allIssues, nil
 }
 
-func GetProjectIssue(client *mongo.Client, dbName, collectionName string, project string, startTime, endTime time.Time) ([]ProjectIssue, error) {
+func GetProjectIssue(client *mongo.Client, dbName, collectionName string, project string, startTime, endTime time.Time) ([]*ProjectIssue, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collectionName)
@@ -121,9 +124,40 @@ func GetProjectIssue(client *mongo.Client, dbName, collectionName string, projec
 	}
 	defer cursor.Close(ctx)
 
-	var results []ProjectIssue
+	var results []*ProjectIssue
 	if err = cursor.All(ctx, &results); err != nil {
 		return nil, err
+	}
+
+	projectDetails, err := GetProjectDetail(client, dbName, os.Getenv("MONGODB_COLLECTION_PROJECT_DETAIL"), project)
+	if err == nil && len(projectDetails) > 0 {
+
+		detailMap := make(map[string]ProjectDetail)
+		for _, detail := range projectDetails {
+			detailMap[detail.Project] = detail
+		}
+		for i, issue := range results {
+			if detail, exists := detailMap[issue.Project]; exists {
+				switch issue.TaskType {
+				case "art_cpp", "art_icon", "art_banner":
+					results[i].Team = "Art"
+					if len(issue.Assignees) == 0 {
+						issue.Assignees = []string{detail.Art}
+					}
+				case "playable":
+					results[i].Team = "PLA"
+					if len(issue.Assignees) == 0 {
+						issue.Assignees = []string{detail.Pla}
+					}
+				case "video":
+					results[i].Team = "Video"
+					if len(issue.Assignees) == 0 {
+						issue.Assignees = []string{detail.Video}
+					}
+				}
+			}
+		}
+
 	}
 
 	return results, nil
