@@ -913,6 +913,107 @@ func HandleDeleteWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"message": "Weekly order deleted successfully"}`))
 }
 
+func HandleGetTempWeeklyOrder(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+
+	res, err := collectionmodels.GetAllWeeklyOrders(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"))
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
+// / =======================================================
+// / =========== Temp Weekly Order Handler =================
+func HandleUpdateTempWeeklyOrder(w http.ResponseWriter, r *http.Request) {
+
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	startWeekStr := body["StartWeek"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+
+	order := &collectionmodels.WeeklyOrder{
+		StartWeek: startWeek,
+		Goal:      body["Goal"].(string),
+		Strategy:  body["Strategy"].(string),
+		Project:   body["Project"].(string),
+		CPP:       (int)(body["CPP"].(float64)),
+		Icon:      (int)(body["Icon"].(float64)),
+		Banner:    (int)(body["Banner"].(float64)),
+		Video:     (int)(body["Video"].(float64)),
+		PLA:       (int)(body["PLA"].(float64)),
+	}
+
+	err := collectionmodels.UpdateWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEMP_WEEKLY_ORDER"), order)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Temp weekly order updated successfully"}`))
+}
+
+func HandleAddNewTempWeeklyOrder(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	startWeekStr := body["StartWeek"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+	order := &collectionmodels.WeeklyOrder{
+		StartWeek: startWeek,
+		Goal:      body["Goal"].(string),
+		Strategy:  body["Strategy"].(string),
+		Project:   body["Project"].(string),
+		CPP:       (int)(body["CPP"].(float64)),
+		Icon:      (int)(body["Icon"].(float64)),
+		Banner:    (int)(body["Banner"].(float64)),
+		Video:     (int)(body["Video"].(float64)),
+		PLA:       (int)(body["PLA"].(float64)),
+	}
+	id, err := collectionmodels.InsertWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEMP_WEEKLY_ORDER"), order)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(fmt.Appendf(nil, `{"message": "Temp weekly order added successfully", "id": "%s"}`, id.Hex()))
+}
+
+func HandleDeleteTempWeeklyOrder(w http.ResponseWriter, r *http.Request) {
+	// TODO : implement role-based access control
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	idStr := body["ID"].(string)
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	err = collectionmodels.DeleteWeeklyOrderByID(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEMP_WEEKLY_ORDER"), id)
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Temp weekly order deleted successfully"}`))
+}
+
 /// =======================================================
 
 /// ========================================================
@@ -954,7 +1055,7 @@ func HandlePostProjectIssues(w http.ResponseWriter, r *http.Request) {
 	endWeekStr := body["EndDate"].(string)
 	endWeek, _ := time.Parse(time.RFC3339, endWeekStr)
 
-	issues, err := collectionmodels.GetProjectIssueFromBD(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_PROJECT_REPORT"), startWeek, endWeek)
+	issues, err := collectionmodels.GetProjectIssueFromBD(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEMP_PROJECT_REPORT"), startWeek, endWeek)
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1044,6 +1145,11 @@ func Init() {
 	http.Handle("/post/update-weekly-order", CORSMiddleware(http.HandlerFunc(HandleUpdateWeeklyOrder)))
 	http.Handle("/post/add-new-weekly-order", CORSMiddleware(http.HandlerFunc(HandleAddNewWeeklyOrder)))
 	http.Handle("/post/delete-weekly-order", CORSMiddleware(http.HandlerFunc(HandleDeleteWeeklyOrder)))
+
+	http.Handle("/get/temp-weekly-order", CORSMiddleware(http.HandlerFunc(HandleGetTempWeeklyOrder)))
+	http.Handle("/post/temp-update-weekly-order", CORSMiddleware(http.HandlerFunc(HandleUpdateTempWeeklyOrder)))
+	http.Handle("/post/add-new-temp-weekly-order", CORSMiddleware(http.HandlerFunc(HandleAddNewTempWeeklyOrder)))
+	http.Handle("/post/delete-temp-weekly-order", CORSMiddleware(http.HandlerFunc(HandleDeleteTempWeeklyOrder)))
 
 	http.Handle("/get/admin-role", CORSMiddleware(http.HandlerFunc(HandleAdminRole)))
 	/// =======================================================
