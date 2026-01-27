@@ -833,18 +833,19 @@ func SaveProjectReport() error {
 
 	// Report the previous full week: last Monday 00:00 -> this Monday 00:00 (minus 1 second).
 	daysSinceMonday := (int(todayMidnight.Weekday()) - int(time.Monday) + 7) % 7
-	thisWeekMondayStart := todayMidnight.AddDate(0, 0, -daysSinceMonday)
-	lastWeekMondayStart := thisWeekMondayStart.AddDate(0, 0, -7)
-	// lastWeekEnd := thisWeekMondayStart.Add(-time.Second)
+	thisWeekMonday := todayMidnight.AddDate(0, 0, -daysSinceMonday)
+	lastWeekMonday := thisWeekMonday.AddDate(0, 0, -7)
+	// Move to end of Monday: 23:59:59 local time
+	thisWeekMonday = thisWeekMonday.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 
-	fmt.Println("Saving project report for period (local):", lastWeekMondayStart, "to", thisWeekMondayStart)
+	fmt.Println("Saving project report for period (local):", lastWeekMonday, "to", thisWeekMonday)
 
 	issues, err := collectionmodels.GetProjectIssues(
 		client,
 		os.Getenv("MONGODB_NAME"),
 		os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"),
-		lastWeekMondayStart,
-		thisWeekMondayStart,
+		lastWeekMonday,
+		thisWeekMonday,
 	)
 
 	if err != nil {

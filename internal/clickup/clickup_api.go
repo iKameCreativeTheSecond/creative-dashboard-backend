@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	// "sync"
+	"sync"
 	"time"
 
 	database "performance-dashboard-backend/internal/database"
@@ -93,7 +93,7 @@ func FetchTaskListConcept(token string, listID string, fromDate int64) ([]ClickU
 		params := []string{"include_closed=true", "archived=false", fmt.Sprintf("page=%d", page)}
 		params = append(params, "include_closed=true")
 		params = append(params, "tags[]=ccd")
-		paramCusfomField := fmt.Sprintf("custom_fields=[{\"field_id\":\"%s\",\"operator\":\"<=\",\"value\":\"%d\"}]", os.Getenv("CLICKUP_FIELD_ID_CONCEPT_DONE_DATE"), fromDate)
+		paramCusfomField := fmt.Sprintf("custom_fields=[{\"field_id\":\"%s\",\"operator\":\">=\",\"value\":\"%d\"}]", os.Getenv("CLICKUP_FIELD_ID_CONCEPT_DONE_DATE"), fromDate)
 		params = append(params, paramCusfomField)
 		requestURL := fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?%s", listID, strings.Join(params, "&"))
 
@@ -512,6 +512,7 @@ func GetTaskForConcept() []*collectionmodels.CompletedTask {
 	}
 	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
 	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond)) - 1
+	fmt.Println("Time Window for Concept team from", windowStartInclusiveMillis, "to", nowVN)
 	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), true, TAG_CONCEPT_DONE, false, windowStartInclusiveMillis)
 	if err != nil {
 		fmt.Println("Error fetching ClickUp task list:", err)
