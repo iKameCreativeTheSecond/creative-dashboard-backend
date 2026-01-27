@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"sync"
 	"time"
 
 	database "performance-dashboard-backend/internal/database"
