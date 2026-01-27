@@ -916,7 +916,7 @@ func HandleDeleteWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 func HandleGetTempWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 	// TODO : implement role-based access control
 
-	res, err := collectionmodels.GetAllWeeklyOrders(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"))
+	res, err := collectionmodels.GetAllWeeklyOrders(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEMP_WEEKLY_ORDER"))
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1055,7 +1055,7 @@ func HandlePostProjectIssues(w http.ResponseWriter, r *http.Request) {
 	endWeekStr := body["EndDate"].(string)
 	endWeek, _ := time.Parse(time.RFC3339, endWeekStr)
 
-	issues, err := collectionmodels.GetProjectIssueFromBD(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEMP_PROJECT_REPORT"), startWeek, endWeek)
+	issues, err := collectionmodels.GetProjectIssueFromBD(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_PROJECT_REPORT"), startWeek, endWeek)
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return

@@ -10,7 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
+
+	// "sync"
 	"time"
 
 	database "performance-dashboard-backend/internal/database"
@@ -215,8 +216,8 @@ func UnixMillisToTimeStr(msStr string) time.Time {
 }
 
 func Init() {
-	go ScheduleWeeklyTaskSync()
-	// SyncronizeWeeklyClickUpTasks()
+	// go ScheduleWeeklyTaskSync()
+	SyncronizeWeeklyClickUpTasks()
 }
 
 func ScheduleWeeklyTaskSync() {
@@ -235,34 +236,34 @@ func ScheduleWeeklyTaskSync() {
 }
 
 func SyncronizeWeeklyClickUpTasks() {
-	var wg sync.WaitGroup
+	// var wg sync.WaitGroup
 
-	wg.Add(4)
-	fmt.Println("Start sync ClickUp tasks at", time.Now())
-	go func() {
-		defer wg.Done()
-		SyncTaskForConcept()
-	}()
+	// wg.Add(4)
+	// fmt.Println("Start sync ClickUp tasks at", time.Now())
+	// go func() {
+	// 	defer wg.Done()
+	// 	SyncTaskForConcept()
+	// }()
 
-	go func() {
-		defer wg.Done()
-		SyncTaskForPlayable()
-	}()
+	// go func() {
+	// 	defer wg.Done()
+	// 	SyncTaskForPlayable()
+	// }()
 
-	go func() {
-		defer wg.Done()
-		SyncTaskForArt()
-	}()
+	// go func() {
+	// 	defer wg.Done()
+	// 	SyncTaskForArt()
+	// }()
 
-	go func() {
-		defer wg.Done()
-		SyncTaskForVideo()
-	}()
+	// go func() {
+	// 	defer wg.Done()
+	// 	SyncTaskForVideo()
+	// }()
 
-	// Đợi tất cả sync tasks hoàn thành trước khi save report
-	wg.Wait()
+	// // Đợi tất cả sync tasks hoàn thành trước khi save report
+	// wg.Wait()
 
-	fmt.Println("Completed sync ClickUp tasks at", time.Now())
+	// fmt.Println("Completed sync ClickUp tasks at", time.Now())
 
 	database.SaveProjectReport()
 

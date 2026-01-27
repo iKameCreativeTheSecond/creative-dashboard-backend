@@ -38,6 +38,9 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 			continue
 		}
 		for _, issue := range issues {
+			if issue.OrderCount <= 0 {
+				continue
+			}
 			allIssues = append(allIssues, *issue)
 		}
 	}
