@@ -11,6 +11,7 @@ import (
 	"performance-dashboard-backend/internal/clickup"
 	db "performance-dashboard-backend/internal/database"
 	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -179,6 +180,17 @@ func contains(slice []string, s string) bool {
 	return false
 }
 
+// normalizeAuthToken trims whitespace, removes optional Bearer prefix,
+// and strips wrapping quotes for robust header handling across environments.
+func normalizeAuthToken(h string) string {
+	s := strings.TrimSpace(h)
+	if len(s) >= 7 && strings.EqualFold(s[:7], "Bearer ") {
+		s = strings.TrimSpace(s[7:])
+	}
+	s = strings.Trim(s, "\"'")
+	return s
+}
+
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	body := map[string]string{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -213,7 +225,8 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUserRole(token string) ([]*db.TeamRole, bool) {
-	session, exists := sessions[token]
+	t := normalizeAuthToken(token)
+	session, exists := sessions[t]
 	if !exists {
 		return nil, false
 	}
@@ -228,7 +241,8 @@ func ClearSessionMapSchedule() {
 }
 
 func GetEmailFromToken(token string) (string, bool) {
-	session, exists := sessions[token]
+	t := normalizeAuthToken(token)
+	session, exists := sessions[t]
 	if !exists {
 		return "", false
 	}
