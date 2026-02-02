@@ -218,12 +218,14 @@ func GetProjectIssueFromBD(client *mongo.Client, dbName, collectionName string, 
 	}
 	cursor, err := collection.Find(ctx, filter)
 	if err != nil {
+		fmt.Println("Error finding project issues:", err)
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
 	var results []ProjectIssue
 	if err = cursor.All(ctx, &results); err != nil {
+		fmt.Println("Error decoding project issues:", err)
 		return nil, err
 	}
 	return &results, nil
