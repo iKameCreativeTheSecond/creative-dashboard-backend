@@ -238,27 +238,27 @@ func ScheduleWeeklyTaskSync() {
 func SyncronizeWeeklyClickUpTasks() {
 	var wg sync.WaitGroup
 
-	wg.Add(4)
+	wg.Add(2)
 	fmt.Println("Start sync ClickUp tasks at", time.Now())
 	go func() {
 		defer wg.Done()
 		SyncTaskForConcept()
 	}()
 
-	go func() {
-		defer wg.Done()
-		SyncTaskForPlayable()
-	}()
+	// go func() {
+	// 	defer wg.Done()
+	// 	SyncTaskForPlayable()
+	// }()
 
 	go func() {
 		defer wg.Done()
 		SyncTaskForArt()
 	}()
 
-	go func() {
-		defer wg.Done()
-		SyncTaskForVideo()
-	}()
+	// go func() {
+	// 	defer wg.Done()
+	// 	SyncTaskForVideo()
+	// }()
 
 	// Đợi tất cả sync tasks hoàn thành trước khi save report
 	wg.Wait()
