@@ -43,6 +43,12 @@ type ClickUpProjectItem struct {
 	OrderIndex int    `json:"orderindex"`
 }
 
+type ClickUpProjectCustomFieldConceptDoneDate struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Value int64  `json:"value"`
+}
+
 type ClickUpProjectCustomField struct {
 	Name       string               `json:"name"`
 	TypeConfig ClickUpProjectOption `json:"type_config"`

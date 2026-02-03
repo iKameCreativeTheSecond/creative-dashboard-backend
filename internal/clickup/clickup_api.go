@@ -22,7 +22,7 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-func FetchTasksFromSpace(token string, spaceID string, isCompleted bool, tag string, includeSubtask bool, fromDate int64) ([]ClickUpTask, error) {
+func FetchTasksFromSpace(token string, spaceID string, isCompleted bool, tag string, includeSubtask bool, fromTimeMilies int64, toTimeMilies int64) ([]ClickUpTask, error) {
 
 	url := fmt.Sprintf("https://api.clickup.com/api/v2/space/%s/list", spaceID)
 
@@ -69,9 +69,9 @@ func FetchTasksFromSpace(token string, spaceID string, isCompleted bool, tag str
 		var tasks []ClickUpTask
 		var err error
 		if isConceptTeam {
-			tasks, err = FetchTaskListConcept(token, list.Id, fromDate)
+			tasks, err = FetchTaskListConcept(token, list.Id, fromTimeMilies, toTimeMilies)
 		} else {
-			tasks, err = FetchTaskList(token, list.Id, isCompleted, tag, includeSubtask, fromDate)
+			tasks, err = FetchTaskList(token, list.Id, isCompleted, tag, includeSubtask, fromTimeMilies, toTimeMilies)
 		}
 		if err != nil {
 			fmt.Printf("Error fetching tasks from list %s: %v\n", list.Id, err)
@@ -83,16 +83,14 @@ func FetchTasksFromSpace(token string, spaceID string, isCompleted bool, tag str
 	return allTasks, nil
 }
 
-func FetchTaskListConcept(token string, listID string, fromDate int64) ([]ClickUpTask, error) {
+func FetchTaskListConcept(token string, listID string, fromTimeMilies int64, toTimeMilies int64) ([]ClickUpTask, error) {
 	client := &http.Client{}
 	page := 0
 	var allTasks []ClickUpTask
 
 	for {
-		params := []string{"include_closed=true", "archived=false", fmt.Sprintf("page=%d", page)}
-		params = append(params, "include_closed=true")
-		params = append(params, "tags[]=ccd")
-		paramCusfomField := fmt.Sprintf("custom_fields=[{\"field_id\":\"%s\",\"operator\":\">=\",\"value\":\"%d\"}]", os.Getenv("CLICKUP_FIELD_ID_CONCEPT_DONE_DATE"), fromDate)
+		params := []string{"include_closed=true", "archived=false", "tags[]=ccd", fmt.Sprintf("page=%d", page)}
+		paramCusfomField := fmt.Sprintf("custom_fields=[{\"field_id\":\"%s\",\"operator\":\">\",\"value\":\"%d\"}]", os.Getenv("CLICKUP_FIELD_ID_CONCEPT_DONE_DATE"), fromTimeMilies)
 		params = append(params, paramCusfomField)
 		requestURL := fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?%s", listID, strings.Join(params, "&"))
 
@@ -138,7 +136,7 @@ func FetchTaskListConcept(token string, listID string, fromDate int64) ([]ClickU
 	return allTasks, nil
 }
 
-func FetchTaskList(token string, listID string, isCompleted bool, tag string, includeSubtask bool, fromDate int64) ([]ClickUpTask, error) {
+func FetchTaskList(token string, listID string, isCompleted bool, tag string, includeSubtask bool, fromTimeMilies int64, toTimeMilies int64) ([]ClickUpTask, error) {
 	client := &http.Client{}
 	page := 0
 	var allTasks []ClickUpTask
@@ -151,8 +149,11 @@ func FetchTaskList(token string, listID string, isCompleted bool, tag string, in
 		if includeSubtask {
 			params = append(params, "subtasks=true")
 		}
-		if fromDate > 0 {
-			params = append(params, fmt.Sprintf("date_done_gt=%d", fromDate))
+		if fromTimeMilies > 0 {
+			params = append(params, fmt.Sprintf("date_done_gt=%d", fromTimeMilies))
+		}
+		if toTimeMilies > 0 {
+			params = append(params, fmt.Sprintf("date_done_lt=%d", toTimeMilies))
 		}
 		requestURL := fmt.Sprintf("https://api.clickup.com/api/v2/list/%s/task?%s", listID, strings.Join(params, "&"))
 
@@ -380,9 +381,10 @@ func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels
 		windowStartInclusive = thisWeekTuesdayStart.AddDate(0, 0, -7)
 	}
 	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
-	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond)) - 1
+	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond))
+	var thisTueDayatMidnightMillis = (thisWeekTuesdayStart.UnixNano() / int64(time.Millisecond))
 	// fmt.Println("Time Window for team", team, "from", windowStartInclusive, "to", nowVN)
-	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true, tag, includeSubtask, windowStartInclusiveMillis)
+	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true, tag, includeSubtask, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
 	if err != nil {
 		fmt.Println("Error fetching ClickUp task list:", err)
 		return nil
@@ -510,9 +512,11 @@ func GetTaskForConcept() []*collectionmodels.CompletedTask {
 		windowStartInclusive = thisWeekTuesdayStart.AddDate(0, 0, -7)
 	}
 	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
-	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond)) - 1
-	fmt.Println("Time Window for Concept team from", windowStartInclusiveMillis, "to", nowVN)
-	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), true, TAG_CONCEPT_DONE, false, windowStartInclusiveMillis)
+	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond))
+	var thisTueDayatMidnightMillis = (thisWeekTuesdayStart.UnixNano() / int64(time.Millisecond))
+	fmt.Println("Time Window for Concept team from", windowStartInclusive, "to", thisWeekTuesdayStart)
+
+	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), true, TAG_CONCEPT_DONE, false, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
 	if err != nil {
 		fmt.Println("Error fetching ClickUp task list:", err)
 		return nil
@@ -525,10 +529,6 @@ func GetTaskForConcept() []*collectionmodels.CompletedTask {
 		var customFieldMap = util.IndexBy(task.CustomFields, func(cf *ClickUpCustomField) string {
 			return cf.Name
 		})
-
-		if task.DateDone == "" {
-			continue
-		}
 
 		var toolIndexes []int
 		if toolCustomField, ok := customFieldMap["Tool/CTST Concept"]; ok && toolCustomField != nil {
@@ -547,6 +547,22 @@ func GetTaskForConcept() []*collectionmodels.CompletedTask {
 					}
 				}
 			}
+		}
+
+		var conceptDoneDate, okDate = customFieldMap["Ngày tick Done Concept"]
+		if !okDate || conceptDoneDate.Value == nil {
+			fmt.Println("Concept Done Date custom field missing for task:", task.Name)
+			continue
+		}
+
+		conceptDoneDateMillis, ok1 := anyToInt64(conceptDoneDate.Value)
+		if !ok1 {
+			fmt.Println("Error converting Concept Done Date custom field to int64 for task:", task.Name)
+			continue
+		}
+		if conceptDoneDateMillis == 0 || conceptDoneDateMillis > thisTueDayatMidnightMillis {
+			fmt.Println("Concept Done Date out of range for task:", task.Name)
+			continue
 		}
 
 		var difficultCustomField, okLevel = customFieldMap["Concept Difficult"]
@@ -654,6 +670,37 @@ func anyToInt(v any) (int, bool) {
 			return 0, false
 		}
 		return i, true
+	default:
+		return 0, false
+	}
+}
+
+func anyToInt64(v any) (int64, bool) {
+	switch t := v.(type) {
+	case int:
+		return int64(t), true
+	case int32:
+		return int64(t), true
+	case int64:
+		return t, true
+	case float64:
+		// encoding/json decodes numbers into float64 when the destination is `any`.
+		return int64(t), true
+	case json.Number:
+		i64, err := t.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return i64, true
+	case string:
+		if t == "" {
+			return 0, false
+		}
+		i64, err := strconv.ParseInt(t, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return i64, true
 	default:
 		return 0, false
 	}
