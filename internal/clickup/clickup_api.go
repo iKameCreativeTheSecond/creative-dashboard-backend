@@ -228,7 +228,12 @@ func ScheduleWeeklyTaskSync() {
 		loc = time.UTC
 	}
 	c := cron.New(cron.WithLocation(loc))
-	_, err = c.AddFunc("0 1 * * 2", SyncronizeWeeklyClickUpTasks)
+	_, err = c.AddFunc("0 1 * * 2", SyncronizeWeeklyClickUpTasksMondayNight)
+	if err != nil {
+		fmt.Println("Cron add error:", err)
+		return
+	}
+	_, err = c.AddFunc("0 0 * * 3", SyncronizeWeeklyClickUpTasksTuesdayNight)
 	if err != nil {
 		fmt.Println("Cron add error:", err)
 		return
@@ -236,7 +241,33 @@ func ScheduleWeeklyTaskSync() {
 	c.Start()
 }
 
-func SyncronizeWeeklyClickUpTasks() {
+func SyncronizeWeeklyClickUpTasksTuesdayNight() {
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+	fmt.Println("Start sync ClickUp tasks at", time.Now())
+
+	go func() {
+		defer wg.Done()
+		SyncTaskForPlayable()
+	}()
+
+	go func() {
+		defer wg.Done()
+		SyncTaskForVideo()
+	}()
+
+	// Đợi tất cả sync tasks hoàn thành trước khi save report
+	wg.Wait()
+
+	fmt.Println("Completed sync ClickUp tasks at", time.Now())
+
+	database.SaveProjectReport()
+
+	fmt.Println("Completed saving project report at", time.Now())
+}
+
+func SyncronizeWeeklyClickUpTasksMondayNight() {
 	var wg sync.WaitGroup
 
 	wg.Add(2)
@@ -282,14 +313,37 @@ func SyncTaskForConcept() {
 
 func SyncTaskForPlayable() {
 
+	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if locErr != nil {
+		locationVN = time.FixedZone("ICT", 7*60*60)
+	}
+	nowVN := time.Now().In(locationVN)
+	// Window start: most recent Tuesday 00:00 (local VN time).
+	// If that Tuesday is too recent (< 5 days ago), use the previous Tuesday instead.
+	weekday := nowVN.Weekday()
+	daysSinceTuesday := (int(weekday) - int(time.Tuesday) + 7) % 7
+	thisWeekTuesdayStart := time.Date(nowVN.Year(), nowVN.Month(), nowVN.Day(), 0, 0, 0, 0, locationVN).AddDate(0, 0, -daysSinceTuesday)
+	windowStartInclusive := thisWeekTuesdayStart
+	if nowVN.Sub(thisWeekTuesdayStart) < 5*24*time.Hour {
+		windowStartInclusive = thisWeekTuesdayStart.AddDate(0, 0, -7)
+	}
+	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
+	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond))
+	var thisTueDayatMidnightMillis = (thisWeekTuesdayStart.UnixNano() / int64(time.Millisecond))
+
+	// Shift the window from Tuesday 00:00 to Wednesday 00:00 by adding +24h.
+	shiftMillis := int64((24 * time.Hour) / time.Millisecond)
+	windowStartInclusiveMillis += shiftMillis
+	thisTueDayatMidnightMillis += shiftMillis
+
 	var tasks = []*collectionmodels.CompletedTask{}
 
-	var tasks1 = GetTaskForTeam(constants.Playable, os.Getenv("CLICKUP_SPACE_ID_PLA"), "")
+	var tasks1 = GetTaskForTeam(constants.Playable, os.Getenv("CLICKUP_SPACE_ID_PLA"), "", windowStartInclusiveMillis, thisTueDayatMidnightMillis)
 	if tasks1 != nil {
 		tasks = append(tasks, tasks1...)
 	}
 
-	var task2 = GetTaskForTeam(constants.Playable, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_PLA)
+	var task2 = GetTaskForTeam(constants.Playable, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_PLA, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
 	if task2 != nil {
 		tasks = append(tasks, task2...)
 	}
@@ -302,69 +356,6 @@ func SyncTaskForPlayable() {
 func SyncTaskForArt() {
 
 	var tasks = []*collectionmodels.CompletedTask{}
-
-	var task1 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_ART"), "")
-	if task1 != nil {
-		tasks = append(tasks, task1...)
-	}
-
-	var task2 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_CPP)
-	if task2 != nil {
-		tasks = append(tasks, task2...)
-	}
-
-	var task3 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_ICON)
-	if task3 != nil {
-		tasks = append(tasks, task3...)
-	}
-
-	var task4 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_BANNER)
-	if task4 != nil {
-		tasks = append(tasks, task4...)
-	}
-
-	var task5 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_ASSET)
-	if task5 != nil {
-		tasks = append(tasks, task5...)
-	}
-
-	var task6 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_ART)
-	if task6 != nil {
-		task6 = dedupeCompletedTasksByTaskName(task6)
-		tasks = append(tasks, task6...)
-	}
-
-	if len(tasks) > 0 {
-		collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
-	}
-
-}
-
-func SyncTaskForVideo() {
-
-	var tasks = []*collectionmodels.CompletedTask{}
-
-	var task1 = GetTaskForTeam(constants.Video, os.Getenv("CLICKUP_SPACE_ID_VIDEO"), "")
-	if task1 != nil {
-		tasks = append(tasks, task1...)
-	}
-
-	var task2 = GetTaskForTeam(constants.Video, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_VID)
-	if task2 != nil {
-		tasks = append(tasks, task2...)
-	}
-
-	if len(tasks) > 0 {
-		collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
-	}
-}
-
-func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels.CompletedTask {
-
-	var includeSubtask bool = false
-	if team == constants.Art || team == constants.Video {
-		includeSubtask = true
-	}
 
 	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
 	if locErr != nil {
@@ -383,8 +374,95 @@ func GetTaskForTeam(team string, spaceID string, tag string) []*collectionmodels
 	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
 	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond))
 	var thisTueDayatMidnightMillis = (thisWeekTuesdayStart.UnixNano() / int64(time.Millisecond))
+
+	var task1 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_ART"), "", windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	if task1 != nil {
+		tasks = append(tasks, task1...)
+	}
+
+	var task2 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_CPP, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	if task2 != nil {
+		tasks = append(tasks, task2...)
+	}
+
+	var task3 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_ICON, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	if task3 != nil {
+		tasks = append(tasks, task3...)
+	}
+
+	var task4 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_BANNER, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	if task4 != nil {
+		tasks = append(tasks, task4...)
+	}
+
+	var task5 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_ASSET, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	if task5 != nil {
+		tasks = append(tasks, task5...)
+	}
+
+	var task6 = GetTaskForTeam(constants.Art, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_ART, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	if task6 != nil {
+		task6 = dedupeCompletedTasksByTaskName(task6)
+		tasks = append(tasks, task6...)
+	}
+
+	if len(tasks) > 0 {
+		collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
+	}
+
+}
+
+func SyncTaskForVideo() {
+
+	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if locErr != nil {
+		locationVN = time.FixedZone("ICT", 7*60*60)
+	}
+	nowVN := time.Now().In(locationVN)
+	// Window start: most recent Tuesday 00:00 (local VN time).
+	// If that Tuesday is too recent (< 5 days ago), use the previous Tuesday instead.
+	weekday := nowVN.Weekday()
+	daysSinceTuesday := (int(weekday) - int(time.Tuesday) + 7) % 7
+	thisWeekTuesdayStart := time.Date(nowVN.Year(), nowVN.Month(), nowVN.Day(), 0, 0, 0, 0, locationVN).AddDate(0, 0, -daysSinceTuesday)
+	windowStartInclusive := thisWeekTuesdayStart
+	if nowVN.Sub(thisWeekTuesdayStart) < 5*24*time.Hour {
+		windowStartInclusive = thisWeekTuesdayStart.AddDate(0, 0, -7)
+	}
+	// ClickUp uses date_done_gt (strictly greater). Subtract 1ms so tasks at exactly Tuesday 00:00 are included.
+	var windowStartInclusiveMillis = (windowStartInclusive.UnixNano() / int64(time.Millisecond))
+	var thisTueDayatMidnightMillis = (thisWeekTuesdayStart.UnixNano() / int64(time.Millisecond))
+
+	// Shift the window from Tuesday 00:00 to Wednesday 00:00 by adding +24h.
+	shiftMillis := int64((24 * time.Hour) / time.Millisecond)
+	windowStartInclusiveMillis += shiftMillis
+	thisTueDayatMidnightMillis += shiftMillis
+
+	var tasks = []*collectionmodels.CompletedTask{}
+
+	var task1 = GetTaskForTeam(constants.Video, os.Getenv("CLICKUP_SPACE_ID_VIDEO"), "", windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	if task1 != nil {
+		tasks = append(tasks, task1...)
+	}
+
+	var task2 = GetTaskForTeam(constants.Video, os.Getenv("CLICKUP_SPACE_ID_CONCEPT"), TAG_VID, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	if task2 != nil {
+		tasks = append(tasks, task2...)
+	}
+
+	if len(tasks) > 0 {
+		collectionmodels.InsertCompletedTaskToDataBase(database.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), tasks)
+	}
+}
+
+func GetTaskForTeam(team string, spaceID string, tag string, fromTimeMilies int64, toTimeMilies int64) []*collectionmodels.CompletedTask {
+
+	var includeSubtask bool = false
+	if team == constants.Art || team == constants.Video {
+		includeSubtask = true
+	}
+
 	// fmt.Println("Time Window for team", team, "from", windowStartInclusive, "to", nowVN)
-	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true, tag, includeSubtask, windowStartInclusiveMillis, thisTueDayatMidnightMillis)
+	var res, err = FetchTasksFromSpace(os.Getenv("CLICKUP_TOKEN"), spaceID, true, tag, includeSubtask, fromTimeMilies, toTimeMilies)
 	if err != nil {
 		fmt.Println("Error fetching ClickUp task list:", err)
 		return nil
