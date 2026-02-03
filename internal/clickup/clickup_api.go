@@ -218,7 +218,7 @@ func UnixMillisToTimeStr(msStr string) time.Time {
 
 func Init() {
 	go ScheduleWeeklyTaskSync()
-	// SyncronizeWeeklyClickUpTasks()
+	// SyncronizeWeeklyClickUpTasksMondayNight()
 }
 
 func ScheduleWeeklyTaskSync() {
@@ -262,7 +262,7 @@ func SyncronizeWeeklyClickUpTasksTuesdayNight() {
 
 	fmt.Println("Completed sync ClickUp tasks at", time.Now())
 
-	database.SaveProjectReport()
+	database.SaveProjectReport([]string{constants.Concept, constants.Art})
 
 	fmt.Println("Completed saving project report at", time.Now())
 }
@@ -277,27 +277,17 @@ func SyncronizeWeeklyClickUpTasksMondayNight() {
 		SyncTaskForConcept()
 	}()
 
-	// go func() {
-	// 	defer wg.Done()
-	// 	SyncTaskForPlayable()
-	// }()
-
 	go func() {
 		defer wg.Done()
 		SyncTaskForArt()
 	}()
-
-	// go func() {
-	// 	defer wg.Done()
-	// 	SyncTaskForVideo()
-	// }()
 
 	// Đợi tất cả sync tasks hoàn thành trước khi save report
 	wg.Wait()
 
 	fmt.Println("Completed sync ClickUp tasks at", time.Now())
 
-	database.SaveProjectReport()
+	database.SaveProjectReport([]string{constants.Playable, constants.Video})
 
 	fmt.Println("Completed saving project report at", time.Now())
 }

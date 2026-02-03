@@ -822,7 +822,7 @@ func splitByMonday(startDate, endDate time.Time) [][2]time.Time {
 	return ranges
 }
 
-func SaveProjectReport() error {
+func SaveProjectReport(excludeTeams []string) error {
 	nowLoc, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
 	if locErr != nil {
 		nowLoc = time.FixedZone("Asia/Ho_Chi_Minh", 7*60*60)
@@ -853,7 +853,22 @@ func SaveProjectReport() error {
 		return err
 	}
 
-	err = collectionmodels.InsertProjectIssues(client, os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_PROJECT_REPORT"), issues)
+	// Filter out issues from excluded teams
+	var filteredIssues []collectionmodels.ProjectIssue
+	for _, issue := range issues {
+		excluded := false
+		for _, team := range excludeTeams {
+			if issue.Team == team {
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			filteredIssues = append(filteredIssues, issue)
+		}
+	}
+
+	err = collectionmodels.InsertProjectIssues(client, os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_PROJECT_REPORT"), filteredIssues)
 	if err != nil {
 		fmt.Println("Error inserting project issues:", err)
 		return err
