@@ -13,8 +13,6 @@ import (
 	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
 	"strings"
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // CORS middleware
@@ -910,15 +908,11 @@ func HandleDeleteWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idStr := body["ID"].(string)
+	startWeekStr := body["StartWeek"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+	project := body["Project"].(string)
 
-	id, err := primitive.ObjectIDFromHex(idStr)
-	if err != nil {
-		http.Error(w, "Invalid ID format", http.StatusBadRequest)
-		return
-	}
-
-	err = collectionmodels.DeleteWeeklyOrderByID(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), id)
+	var err = collectionmodels.DeleteWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), startWeek, project)
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1011,15 +1005,11 @@ func HandleDeleteTempWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idStr := body["ID"].(string)
+	startWeekStr := body["StartWeek"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+	project := body["Project"].(string)
 
-	id, err := primitive.ObjectIDFromHex(idStr)
-	if err != nil {
-		http.Error(w, "Invalid ID format", http.StatusBadRequest)
-		return
-	}
-
-	err = collectionmodels.DeleteWeeklyOrderByID(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEMP_WEEKLY_ORDER"), id)
+	err := collectionmodels.DeleteWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_TEMP_WEEKLY_ORDER"), startWeek, project)
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
