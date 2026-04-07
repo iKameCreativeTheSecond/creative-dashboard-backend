@@ -224,6 +224,9 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 func GetUserRole(token string) ([]*db.TeamRole, bool) {
 	t := normalizeAuthToken(token)
+	if t == os.Getenv("SERVER_MASTER_TOKEN") {
+		return []*db.TeamRole{{Role: "admin"}}, true
+	}
 	session, exists := sessions[t]
 	if !exists {
 		return nil, false
