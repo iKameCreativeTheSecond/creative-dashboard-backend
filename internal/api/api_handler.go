@@ -456,7 +456,7 @@ func HandleDeleteTeamMember(w http.ResponseWriter, r *http.Request) {
 }
 
 /// =========== End Team Members Handler ================
-/// =====================================================
+/// ======================================================
 
 /// =====================================================
 /// ============ Project Details Handler ================
@@ -839,8 +839,6 @@ func HandleGetWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleUpdateWeeklyOrder(w http.ResponseWriter, r *http.Request) {
-
-	// TODO : implement role-based access control
 	var body map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -848,7 +846,11 @@ func HandleUpdateWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	startWeekStr := body["StartWeek"].(string)
-	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+	startWeek, err := time.Parse(time.RFC3339, startWeekStr)
+	if err != nil {
+		http.Error(w, "Invalid StartWeek", http.StatusBadRequest)
+		return
+	}
 
 	order := &collectionmodels.WeeklyOrder{
 		StartWeek: startWeek,
@@ -862,7 +864,28 @@ func HandleUpdateWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 		PLA:       (int)(body["PLA"].(float64)),
 	}
 
-	err := collectionmodels.UpdateWeeklyOrder(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"), order)
+	client := db.GetMongoClient()
+	dbName := os.Getenv("MONGODB_NAME")
+	coll := os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER")
+
+	existing, err := collectionmodels.GetWeeklyOrders(client, dbName, coll, []time.Time{order.StartWeek}, []string{order.Project})
+	if err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if len(existing) == 0 {
+		_, err := collectionmodels.InsertWeeklyOrder(client, dbName, coll, order)
+		if err != nil {
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"message": "Weekly order created successfully"}`))
+		return
+	}
+
+	err = collectionmodels.UpdateWeeklyOrder(client, dbName, coll, order)
 	if err != nil {
 		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -872,7 +895,6 @@ func HandleUpdateWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleAddNewWeeklyOrder(w http.ResponseWriter, r *http.Request) {
-	// TODO : implement role-based access control
 	var body map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -901,7 +923,6 @@ func HandleAddNewWeeklyOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleDeleteWeeklyOrder(w http.ResponseWriter, r *http.Request) {
-	// TODO : implement role-based access control
 	var body map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
