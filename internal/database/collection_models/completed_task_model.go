@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type CompletedTask struct {
@@ -31,6 +32,18 @@ type CompletedTask struct {
 //	  }
 //	}
 //
+
+func UpsertCompletedTask(client *mongo.Client, dbName, collectionName string, task *CompletedTask) error {
+	collection := client.Database(dbName).Collection(collectionName)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	filter := bson.M{"id": task.TaskID}
+	update := bson.M{"$set": task}
+	opts := options.Update().SetUpsert(true)
+	_, err := collection.UpdateOne(ctx, filter, update, opts)
+	return err
+}
 
 func InsertCompletedTaskToDataBase(client *mongo.Client, dbName, collectionName string, tasks []*CompletedTask) error {
 	collection := client.Database(dbName).Collection(collectionName)

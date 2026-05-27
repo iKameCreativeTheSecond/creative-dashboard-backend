@@ -1133,8 +1133,63 @@ func HandleAdminRole(w http.ResponseWriter, r *http.Request) {
 /// =========== End Project Issues Handler =================
 /// ========================================================
 
+func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
+	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
+	if taskID == "" {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			if rawTaskID, ok := body["task_id"]; ok && rawTaskID != nil {
+				taskID = strings.TrimSpace(fmt.Sprint(rawTaskID))
+			}
+		}
+	}
+
+	if taskID == "" {
+		http.Error(w, "missing task_id", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("ClickUp webhook received task_id: %s", taskID)
+
+	task, err := clickup.FetchSingleTask(os.Getenv("CLICKUP_TOKEN"), taskID)
+	if err != nil {
+		log.Printf("ClickUp webhook: error fetching task %s: %v", taskID, err)
+		http.Error(w, "failed to fetch task from ClickUp", http.StatusInternalServerError)
+		return
+	}
+
+	completedTask, err := clickup.ProcessWebhookTask(task)
+	if err != nil {
+		log.Printf("ClickUp webhook: error processing task %s: %v", taskID, err)
+		http.Error(w, "failed to process task: "+err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	if err := collectionmodels.UpsertCompletedTask(
+		db.GetMongoClient(),
+		os.Getenv("MONGODB_NAME"),
+		os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"),
+		completedTask,
+	); err != nil {
+		log.Printf("ClickUp webhook: error upserting task %s: %v", taskID, err)
+		http.Error(w, "failed to save task", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("ClickUp webhook: task %s saved successfully", taskID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"task_id": taskID,
+		"status":  "saved",
+	})
+}
+
 func Init() {
 	http.Handle("/login", CORSMiddleware(http.HandlerFunc(LoginHandler)))
+
+	// ClickUp webhook test — logs and echoes the payload
+	http.HandleFunc("/webhook/clickup/task-done", HandleClickUpWebhookDoneTask)
 
 	http.Handle("/post/performance-point", CORSMiddleware(http.HandlerFunc(PostHandlerPerformancePoint)))
 	http.Handle("/post/staff-member", CORSMiddleware(http.HandlerFunc(PostHandlerStaffMember)))

@@ -60,6 +60,14 @@ type ClickUpStatus struct {
 	Type   string `json:"type"`
 }
 
+type ClickUpSpace struct {
+	ID string `json:"id"`
+}
+
+type ClickUpTag struct {
+	Name string `json:"name"`
+}
+
 type ClickUpTask struct {
 	Id           string               `json:"id"`
 	Name         string               `json:"name"`
@@ -67,6 +75,8 @@ type ClickUpTask struct {
 	Assignees    []ClickUpAssignee    `json:"assignees"`
 	CustomFields []ClickUpCustomField `json:"custom_fields"`
 	Status       ClickUpStatus        `json:"status"`
+	Space        ClickUpSpace         `json:"space"`
+	Tags         []ClickUpTag         `json:"tags"`
 }
 
 type ClickUpResponse struct {
