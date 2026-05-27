@@ -721,6 +721,91 @@ func FetchSingleTask(token string, taskID string) (*ClickUpTask, error) {
 	return &task, nil
 }
 
+func ProcessWebhookConcept(task *ClickUpTask) (*collectionmodels.CompletedTask, error) {
+
+	tagSet := make(map[string]bool, len(task.Tags))
+	for _, t := range task.Tags {
+		tagSet[strings.ToLower(strings.TrimSpace(t.Name))] = true
+	}
+
+	var team string = constants.Concept;
+
+	customFieldMap := util.IndexBy(task.CustomFields, func(cf *ClickUpCustomField) string {
+		return cf.Name
+	})
+
+	var toolIndexes []int
+	if toolCustomField, ok := customFieldMap["Tool/CTST "+team]; ok && toolCustomField != nil {
+		toolFields, err := util.CoerceStruct[ClickUpToolCustomField](toolCustomField)
+		if err == nil {
+			for _, selectedToolID := range toolFields.Value {
+				for _, option := range toolFields.TypeConfig.Options {
+					if option.ID == selectedToolID {
+						if inx := GetToolIndex(option.Name); inx != -1 {
+							toolIndexes = append(toolIndexes, inx)
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	difficultField, okLevel := customFieldMap[team+" Difficult"]
+	if !okLevel || difficultField.Value == nil {
+		return nil, fmt.Errorf("difficulty field missing for task %s", task.Id)
+	}
+	level, ok := anyToInt(difficultField.Value)
+	if !ok {
+		return nil, fmt.Errorf("invalid difficulty value for task %s", task.Id)
+	}
+
+	projectField, okProject := customFieldMap["Game Name"]
+	if !okProject || projectField.Value == nil {
+		return nil, fmt.Errorf("game name field missing for task %s", task.Id)
+	}
+	projectCustomField, err := util.CoerceStruct[ClickUpProjectCustomField](projectField)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing game name for task %s: %w", task.Id, err)
+	}
+	projectIndex := projectCustomField.Value
+	if projectIndex < 0 || projectIndex >= len(projectCustomField.TypeConfig.Options) {
+		return nil, fmt.Errorf("invalid project index for task %s", task.Id)
+	}
+	projectName := projectCustomField.TypeConfig.Options[projectIndex].Name
+	if spaceIdx := strings.Index(projectName, " "); spaceIdx != -1 {
+		projectName = projectName[spaceIdx+1:]
+	}
+
+	assigneeEmail := ""
+	if len(task.Assignees) > 0 {
+		assigneeIdx := 0
+		if team != constants.Concept && len(task.Assignees) > 1 {
+			assigneeIdx = 1
+		}
+		assigneeEmail = task.Assignees[assigneeIdx].Email
+	}
+
+	taskType := strings.ToLower(team)
+
+	locationVN, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if locErr != nil {
+		locationVN = time.FixedZone("ICT", 7*60*60)
+	}
+
+	return &collectionmodels.CompletedTask{
+		TaskID:     task.Id,
+		TaskName:   task.Name,
+		AssigneeID: assigneeEmail,
+		Tool:       toolIndexes,
+		Level:      level,
+		Project:    projectName,
+		Team:       team,
+		TaskType:   taskType,
+		DoneDate:   time.Now().In(locationVN),
+	}, nil
+}
+
 func ProcessWebhookTask(task *ClickUpTask) (*collectionmodels.CompletedTask, error) {
 	spaceID := task.Space.ID
 
@@ -741,9 +826,6 @@ func ProcessWebhookTask(task *ClickUpTask) (*collectionmodels.CompletedTask, err
 		team = constants.Video
 	case spaceID == os.Getenv("CLICKUP_SPACE_ID_CONCEPT"):
 		switch {
-		case tagSet[TAG_CONCEPT_DONE]:
-			team = constants.Concept
-			taskTag = TAG_CONCEPT_DONE
 		case tagSet[TAG_PLA]:
 			team = constants.Playable
 			taskTag = TAG_PLA

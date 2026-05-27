@@ -38,7 +38,7 @@ func UpsertCompletedTask(client *mongo.Client, dbName, collectionName string, ta
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	filter := bson.M{"id": task.TaskID}
+	filter := bson.M{"id": task.TaskID, "assignee_id": task.AssigneeID}
 	update := bson.M{"$set": task}
 	opts := options.Update().SetUpsert(true)
 	_, err := collection.UpdateOne(ctx, filter, update, opts)
