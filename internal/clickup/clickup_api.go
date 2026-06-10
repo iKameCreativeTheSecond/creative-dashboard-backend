@@ -733,6 +733,9 @@ func ProcessWebhookConcept(task *ClickUpTask) (*collectionmodels.CompletedTask, 
 	customFieldMap := util.IndexBy(task.CustomFields, func(cf *ClickUpCustomField) string {
 		return cf.Name
 	})
+	customFieldByID := util.IndexBy(task.CustomFields, func(cf *ClickUpCustomField) string {
+		return cf.ID
+	})
 
 	var toolIndexes []int
 	if toolCustomField, ok := customFieldMap["Tool/CTST "+team]; ok && toolCustomField != nil {
@@ -793,6 +796,13 @@ func ProcessWebhookConcept(task *ClickUpTask) (*collectionmodels.CompletedTask, 
 		locationVN = time.FixedZone("ICT", 7*60*60)
 	}
 
+	doneDate := time.Now().In(locationVN)
+	if doneDateField, ok := customFieldByID["f218d655-7adb-4a48-83f0-14d8461c4e6c"]; ok && doneDateField != nil && doneDateField.Value != nil {
+		if msStr, ok := doneDateField.Value.(string); ok && msStr != "" {
+			doneDate = UnixMillisToTimeStr(msStr).In(locationVN)
+		}
+	}
+
 	return &collectionmodels.CompletedTask{
 		TaskID:     task.Id,
 		TaskName:   task.Name,
@@ -802,7 +812,7 @@ func ProcessWebhookConcept(task *ClickUpTask) (*collectionmodels.CompletedTask, 
 		Project:    projectName,
 		Team:       team,
 		TaskType:   taskType,
-		DoneDate:   time.Now().In(locationVN),
+		DoneDate:   doneDate,
 	}, nil
 }
 
@@ -929,6 +939,11 @@ func ProcessWebhookTask(task *ClickUpTask) (*collectionmodels.CompletedTask, err
 		locationVN = time.FixedZone("ICT", 7*60*60)
 	}
 
+	doneDate := UnixMillisToTimeStr(task.DateDone).In(locationVN)
+	if task.DateDone == "" {
+		doneDate = time.Now().In(locationVN)
+	}
+
 	return &collectionmodels.CompletedTask{
 		TaskID:     task.Id,
 		TaskName:   task.Name,
@@ -938,7 +953,7 @@ func ProcessWebhookTask(task *ClickUpTask) (*collectionmodels.CompletedTask, err
 		Project:    projectName,
 		Team:       team,
 		TaskType:   taskType,
-		DoneDate:   time.Now().In(locationVN),
+		DoneDate:   doneDate,
 	}, nil
 }
 
