@@ -797,7 +797,7 @@ func ProcessWebhookConcept(task *ClickUpTask) (*collectionmodels.CompletedTask, 
 	}
 
 	doneDate := time.Now().In(locationVN)
-	if doneDateField, ok := customFieldByID["f218d655-7adb-4a48-83f0-14d8461c4e6c"]; ok && doneDateField != nil && doneDateField.Value != nil {
+	if doneDateField, ok := customFieldByID[os.Getenv("CLICKUP_FIELD_ID_CONCEPT_DONE_DATE")]; ok && doneDateField != nil && doneDateField.Value != nil {
 		if msStr, ok := doneDateField.Value.(string); ok && msStr != "" {
 			doneDate = UnixMillisToTimeStr(msStr).In(locationVN)
 		}
