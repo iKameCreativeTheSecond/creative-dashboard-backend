@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 
 	"time"
 
@@ -242,53 +241,12 @@ func ScheduleWeeklyTaskSync() {
 }
 
 func SyncronizeWeeklyClickUpTasksTuesdayNight() {
-	var wg sync.WaitGroup
-
-	wg.Add(2)
-	fmt.Println("Start sync ClickUp tasks at", time.Now())
-
-	go func() {
-		defer wg.Done()
-		SyncTaskForPlayable()
-	}()
-
-	go func() {
-		defer wg.Done()
-		SyncTaskForVideo()
-	}()
-
-	// Đợi tất cả sync tasks hoàn thành trước khi save report
-	wg.Wait()
-
-	fmt.Println("Completed sync ClickUp tasks at", time.Now())
-
 	database.SaveProjectReport([]string{constants.Concept, constants.Art})
-
 	fmt.Println("Completed saving project report at", time.Now())
 }
 
 func SyncronizeWeeklyClickUpTasksMondayNight() {
-	var wg sync.WaitGroup
-
-	wg.Add(2)
-	fmt.Println("Start sync ClickUp tasks at", time.Now())
-	go func() {
-		defer wg.Done()
-		SyncTaskForConcept()
-	}()
-
-	go func() {
-		defer wg.Done()
-		SyncTaskForArt()
-	}()
-
-	// Đợi tất cả sync tasks hoàn thành trước khi save report
-	wg.Wait()
-
-	fmt.Println("Completed sync ClickUp tasks at", time.Now())
-
 	database.SaveProjectReport([]string{constants.Playable, constants.Video})
-
 	fmt.Println("Completed saving project report at", time.Now())
 }
 
