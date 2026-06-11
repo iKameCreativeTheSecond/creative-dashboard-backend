@@ -761,6 +761,12 @@ func ProcessWebhookConcept(task *ClickUpTask) (*collectionmodels.CompletedTask, 
 		}
 	}
 
+	// Shift doneDate to the representative Monday of its work week (Wed 00:00 → Tue 23:59).
+	// Wed–Sun → Monday of the same calendar week; Mon–Tue → Monday of the previous calendar week.
+	daysFromWed := (int(doneDate.Weekday()) - int(time.Wednesday) + 7) % 7
+	wednesday := time.Date(doneDate.Year(), doneDate.Month(), doneDate.Day(), 0, 0, 0, 0, doneDate.Location()).AddDate(0, 0, -daysFromWed)
+	doneDate = wednesday.AddDate(0, 0, -2)
+
 	return &collectionmodels.CompletedTask{
 		TaskID:     task.Id,
 		TaskName:   task.Name,
@@ -901,6 +907,12 @@ func ProcessWebhookTask(task *ClickUpTask) (*collectionmodels.CompletedTask, err
 	if task.DateDone == "" {
 		doneDate = time.Now().In(locationVN)
 	}
+
+	// Shift doneDate to the representative Monday of its work week (Wed 00:00 → Tue 23:59).
+	// Wed–Sun → Monday of the same calendar week; Mon–Tue → Monday of the previous calendar week.
+	daysFromWed := (int(doneDate.Weekday()) - int(time.Wednesday) + 7) % 7
+	wednesday := time.Date(doneDate.Year(), doneDate.Month(), doneDate.Day(), 0, 0, 0, 0, doneDate.Location()).AddDate(0, 0, -daysFromWed)
+	doneDate = wednesday.AddDate(0, 0, -2)
 
 	return &collectionmodels.CompletedTask{
 		TaskID:     task.Id,
