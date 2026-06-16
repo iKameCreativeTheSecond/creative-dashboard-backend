@@ -202,7 +202,7 @@ func UpdateProjectIssue(client *mongo.Client, dbName, collectionName string, iss
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collectionName)
-	_, err := collection.UpdateOne(ctx, bson.M{"_id": issue.ID.String()}, bson.M{"$set": issue})
+	_, err := collection.UpdateOne(ctx, bson.M{"_id": issue.ID}, bson.M{"$set": issue})
 	return err
 }
 

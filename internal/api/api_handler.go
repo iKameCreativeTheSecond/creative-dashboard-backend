@@ -13,6 +13,8 @@ import (
 	collectionmodels "performance-dashboard-backend/internal/database/collection_models"
 	"strings"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // CORS middleware
@@ -1105,6 +1107,67 @@ func HandlePostProjectIssues(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(issues)
 }
 
+func HandleUpdateProjectIssue(w http.ResponseWriter, r *http.Request) {
+	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
+	if !ok || teamRoles == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	idStr, ok := body["ID"].(string)
+	if !ok || idStr == "" {
+		http.Error(w, "Missing or invalid ID", http.StatusBadRequest)
+		return
+	}
+	objID, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	startWeekStr, _ := body["StartWeek"].(string)
+	startWeek, _ := time.Parse(time.RFC3339, startWeekStr)
+
+	var assignees []string
+	if raw, ok := body["Assignees"].([]interface{}); ok {
+		for _, a := range raw {
+			if s, ok := a.(string); ok {
+				assignees = append(assignees, s)
+			}
+		}
+	}
+
+	note, _ := body["Note"].(string)
+	team, _ := body["Team"].(string)
+
+	issue := collectionmodels.ProjectIssue{
+		ID:             objID,
+		Project:        body["Project"].(string),
+		StartWeek:      startWeek,
+		TaskType:       body["TaskType"].(string),
+		CompletedCount: int(body["CompletedCount"].(float64)),
+		Assignees:      assignees,
+		Difference:     int(body["Difference"].(float64)),
+		Team:           team,
+		OrderCount:     int(body["OrderCount"].(float64)),
+		Note:           note,
+	}
+
+	if err := collectionmodels.UpdateProjectIssue(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_PROJECT_REPORT"), issue); err != nil {
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "Project issue updated successfully"}`))
+}
+
 func HandleAdminRole(w http.ResponseWriter, r *http.Request) {
 	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
 	if !ok || teamRoles == nil {
@@ -1292,6 +1355,7 @@ func Init() {
 	/// =======================================================
 
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
+	http.Handle("/post/update-project-issue", CORSMiddleware(http.HandlerFunc(HandleUpdateProjectIssue)))
 
 	// Khởi tạo các background tasks
 	go ClearSessionMapSchedule()
