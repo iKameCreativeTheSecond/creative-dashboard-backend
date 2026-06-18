@@ -171,6 +171,28 @@ func PostHandlerStaffMember(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
+func PostHandlerUserRoleAndTeam(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Email == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	member, err := db.GetMemberByEmail(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"), body.Email)
+	if err != nil {
+		http.Error(w, "Member not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"role": member.Role,
+		"team": member.Team,
+	})
+}
+
 func contains(slice []string, s string) bool {
 	for _, v := range slice {
 		if v == s {
@@ -1353,6 +1375,8 @@ func Init() {
 
 	http.Handle("/get/admin-role", CORSMiddleware(http.HandlerFunc(HandleAdminRole)))
 	/// =======================================================
+
+	http.Handle("/post/user-role-n-team", CORSMiddleware(http.HandlerFunc(PostHandlerUserRoleAndTeam)))
 
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
 	http.Handle("/post/update-project-issue", CORSMiddleware(http.HandlerFunc(HandleUpdateProjectIssue)))

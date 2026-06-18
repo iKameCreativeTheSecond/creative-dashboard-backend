@@ -325,6 +325,18 @@ func GetMembersByTeam(uri, dbName, collName string, team string) ([]*collectionm
 	return results, nil
 }
 
+func GetMemberByEmail(uri, dbName, collName, email string) (*collectionmodels.Member, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collName)
+	var member collectionmodels.Member
+	err := collection.FindOne(ctx, bson.M{"email": email}).Decode(&member)
+	if err != nil {
+		return nil, err
+	}
+	return &member, nil
+}
+
 func IsEmailInDatabase(uri, dbName, collName, email string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
