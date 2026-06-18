@@ -1376,7 +1376,7 @@ func Init() {
 	http.Handle("/get/admin-role", CORSMiddleware(http.HandlerFunc(HandleAdminRole)))
 	/// =======================================================
 
-	http.Handle("/post/user-role-n-team", CORSMiddleware(http.HandlerFunc(PostHandlerUserRoleAndTeam)))
+	// http.Handle("/post/user-role-n-team", CORSMiddleware(http.HandlerFunc(PostHandlerUserRoleAndTeam)))
 
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
 	http.Handle("/post/update-project-issue", CORSMiddleware(http.HandlerFunc(HandleUpdateProjectIssue)))
