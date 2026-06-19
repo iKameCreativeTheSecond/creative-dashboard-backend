@@ -1329,7 +1329,6 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("ClickUp webhook received task_id: %s, triggered by: %s", taskID, triggeringEmail)
 
 	task, err := clickup.FetchSingleTask(os.Getenv("CLICKUP_TOKEN"), taskID)
 	if err != nil {
@@ -1344,7 +1343,8 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to process task: "+err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-	
+
+
 	var triggeringEmail string
 	var payload clickup.ClickUpWebhookPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
@@ -1354,6 +1354,7 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	isAdmin := IsAdmin((triggeringEmail))
+	log.Printf("ClickUp webhook received task_id: %s, triggered by: %s", taskID, triggeringEmail)
 
 	if err := collectionmodels.UpsertCompletedTask(
 		db.GetMongoClient(),
