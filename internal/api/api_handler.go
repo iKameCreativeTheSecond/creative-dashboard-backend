@@ -1264,20 +1264,19 @@ func HandleAdminRole(w http.ResponseWriter, r *http.Request) {
 func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
 
-	var triggeringEmail string
-	if taskID == "" {
-		var payload clickup.ClickUpWebhookPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
-			taskID = strings.TrimSpace(payload.TaskID)
-			if len(payload.HistoryItems) > 0 {
-				triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
-			}
-		}
-	}
-
+	
 	if taskID == "" {
 		http.Error(w, "missing task_id", http.StatusBadRequest)
 		return
+	}
+	
+	var triggeringEmail string
+	var payload clickup.ClickUpWebhookPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+		taskID = strings.TrimSpace(payload.TaskID)
+		if len(payload.HistoryItems) > 0 {
+			triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
+		}
 	}
 
 	log.Printf("ClickUp webhook received task_id: %s, triggered by: %s", taskID, triggeringEmail)
@@ -1324,16 +1323,6 @@ func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
 
-	var triggeringEmail string
-	if taskID == "" {
-		var payload clickup.ClickUpWebhookPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
-			taskID = strings.TrimSpace(payload.TaskID)
-			if len(payload.HistoryItems) > 0 {
-				triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
-			}
-		}
-	}
 
 	if taskID == "" {
 		http.Error(w, "missing task_id", http.StatusBadRequest)
@@ -1355,7 +1344,15 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to process task: "+err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-
+	
+	var triggeringEmail string
+	var payload clickup.ClickUpWebhookPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+		taskID = strings.TrimSpace(payload.TaskID)
+		if len(payload.HistoryItems) > 0 {
+			triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
+		}
+	}
 	isAdmin := IsAdmin((triggeringEmail))
 
 	if err := collectionmodels.UpsertCompletedTask(
