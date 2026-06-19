@@ -457,6 +457,26 @@ type PerformancePointTotalWithTime struct {
 	TotalPerformancePoint PerformancePointTotal `bson:"total_performance_point"`
 }
 
+type ToolPointEntry struct {
+	Index int     `bson:"index"`
+	Point float64 `bson:"point"`
+}
+
+type TaskEntry struct {
+	TaskName             string           `bson:"task_name"`
+	AssigneeID           string           `bson:"assignee_id"`
+	Team                 string           `bson:"team"`
+	Level                int              `bson:"level"`
+	PerformancePoint     float64          `bson:"performance_point"`
+	ToolPointsT          []ToolPointEntry `bson:"tool_points_t"`
+	ToolPointsQ          []ToolPointEntry `bson:"tool_points_q"`
+	ToolFactor           float64          `bson:"tool_factor"`
+	CreativeProcessPoint float64          `bson:"creative_process_point"`
+	CreativeTaskPoint    float64          `bson:"creative_task_point"`
+	BasePoint            float64          `bson:"base_point"`
+	DoneDate             time.Time        `bson:"done_date"`
+}
+
 func GetPerformancePointTotal(uri, dbName, collName, identifier string, startDate, endDate time.Time, isTeam bool) (*PerformancePointTotal, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -715,6 +735,197 @@ func GetPerformancePoints(client *mongo.Client, dbName, collectionName string, i
 		TotalPerformancePoint: per,
 	}
 	results = append(results, res)
+	return results, nil
+}
+
+func GetTaskEntries(client *mongo.Client, dbName, collectionName string, identifier string, startDate, endDate time.Time, isTeam, isWeekly bool) ([]TaskEntry, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	collection := client.Database(dbName).Collection(collectionName)
+
+	var identifierKey string
+	if isTeam {
+		identifierKey = "team"
+	} else {
+		identifierKey = "assignee_id"
+	}
+
+	pipeline := mongo.Pipeline{
+		// 1. Match
+		{{Key: "$match", Value: bson.D{
+			{Key: identifierKey, Value: identifier},
+			{Key: "done_date", Value: bson.D{
+				{Key: "$gte", Value: startDate},
+				{Key: "$lte", Value: endDate},
+			}},
+		}}},
+
+		// 2. Lookup level theo team
+		{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "level"},
+			{Key: "localField", Value: "team"},
+			{Key: "foreignField", Value: "team"},
+			{Key: "as", Value: "level_info"},
+		}}},
+		{{Key: "$unwind", Value: "$level_info"}},
+
+		// 3. Tính performance_point
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "performance_point", Value: bson.D{
+				{Key: "$let", Value: bson.D{
+					{Key: "vars", Value: bson.D{
+						{Key: "idx", Value: bson.D{{Key: "$subtract", Value: bson.A{"$level", 1}}}},
+						{Key: "arr", Value: "$level_info.levelPoint"},
+					}},
+					{Key: "in", Value: bson.D{
+						{Key: "$cond", Value: bson.A{
+							bson.D{{Key: "$lt", Value: bson.A{"$$idx", bson.D{{Key: "$size", Value: "$$arr"}}}}},
+							bson.D{{Key: "$arrayElemAt", Value: bson.A{"$$arr", "$$idx"}}},
+							"$level",
+						}},
+					}},
+				}},
+			}},
+		}}},
+
+		// 4. Lookup creative-tool theo tool
+		{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "creative-tool"},
+			{Key: "localField", Value: "tool"},
+			{Key: "foreignField", Value: "index"},
+			{Key: "as", Value: "tool_info"},
+		}}},
+
+		// 5. Tách tool loại t và q
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "tool_points_t", Value: bson.D{
+				{Key: "$map", Value: bson.D{
+					{Key: "input", Value: bson.D{
+						{Key: "$filter", Value: bson.D{
+							{Key: "input", Value: "$tool_info"},
+							{Key: "as", Value: "t"},
+							{Key: "cond", Value: bson.D{{Key: "$eq", Value: bson.A{"$$t.type", "t"}}}},
+						}},
+					}},
+					{Key: "as", Value: "t"},
+					{Key: "in", Value: bson.D{
+						{Key: "index", Value: "$$t.index"},
+						{Key: "point", Value: bson.D{
+							{Key: "$let", Value: bson.D{
+								{Key: "vars", Value: bson.D{
+									{Key: "idx", Value: bson.D{{Key: "$subtract", Value: bson.A{"$level", 1}}}},
+									{Key: "arr", Value: "$$t.point"},
+								}},
+								{Key: "in", Value: bson.D{
+									{Key: "$cond", Value: bson.A{
+										bson.D{{Key: "$lt", Value: bson.A{"$$idx", bson.D{{Key: "$size", Value: "$$arr"}}}}},
+										bson.D{{Key: "$arrayElemAt", Value: bson.A{"$$arr", "$$idx"}}},
+										bson.D{{Key: "$arrayElemAt", Value: bson.A{"$$arr", 0}}},
+									}},
+								}},
+							}},
+						}},
+					}},
+				}},
+			}},
+			{Key: "tool_points_q", Value: bson.D{
+				{Key: "$map", Value: bson.D{
+					{Key: "input", Value: bson.D{
+						{Key: "$filter", Value: bson.D{
+							{Key: "input", Value: "$tool_info"},
+							{Key: "as", Value: "t"},
+							{Key: "cond", Value: bson.D{{Key: "$eq", Value: bson.A{"$$t.type", "q"}}}},
+						}},
+					}},
+					{Key: "as", Value: "t"},
+					{Key: "in", Value: bson.D{
+						{Key: "index", Value: "$$t.index"},
+						{Key: "point", Value: bson.D{{Key: "$arrayElemAt", Value: bson.A{"$$t.point", 0}}}},
+					}},
+				}},
+			}},
+		}}},
+
+		// 6. Tính tool_factor và creative_process_point
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "tool_factor", Value: bson.D{
+				{Key: "$cond", Value: bson.D{
+					{Key: "if", Value: bson.D{{Key: "$eq", Value: bson.A{bson.D{{Key: "$size", Value: "$tool_points_t"}}, 0}}}},
+					{Key: "then", Value: 0},
+					{Key: "else", Value: bson.D{
+						{Key: "$reduce", Value: bson.D{
+							{Key: "input", Value: bson.D{
+								{Key: "$map", Value: bson.D{
+									{Key: "input", Value: "$tool_points_t"},
+									{Key: "as", Value: "tp"},
+									{Key: "in", Value: bson.D{
+										{Key: "$cond", Value: bson.A{
+											bson.D{{Key: "$lt", Value: bson.A{"$$tp.point", 1}}},
+											"$$tp.point",
+											1,
+										}},
+									}},
+								}},
+							}},
+							{Key: "initialValue", Value: 1},
+							{Key: "in", Value: bson.D{{Key: "$multiply", Value: bson.A{"$$value", "$$this"}}}},
+						}},
+					}},
+				}},
+			}},
+			{Key: "creative_process_point", Value: bson.D{
+				{Key: "$sum", Value: bson.D{
+					{Key: "$map", Value: bson.D{
+						{Key: "input", Value: "$tool_points_q"},
+						{Key: "as", Value: "tp"},
+						{Key: "in", Value: "$$tp.point"},
+					}},
+				}},
+			}},
+		}}},
+
+		// 7. Tính creative_task_point
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "creative_task_point", Value: bson.D{
+				{Key: "$multiply", Value: bson.A{"$performance_point", "$tool_factor"}},
+			}},
+		}}},
+
+		// 8. Tính base_point
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "base_point", Value: bson.D{
+				{Key: "$subtract", Value: bson.A{"$performance_point", "$creative_task_point"}},
+			}},
+		}}},
+
+		// 9. Project các field cần thiết
+		{{Key: "$project", Value: bson.D{
+			{Key: "task_name", Value: 1},
+			{Key: "assignee_id", Value: 1},
+			{Key: "team", Value: 1},
+			{Key: "level", Value: 1},
+			{Key: "performance_point", Value: 1},
+			{Key: "tool_points_t", Value: 1},
+			{Key: "tool_points_q", Value: 1},
+			{Key: "tool_factor", Value: 1},
+			{Key: "creative_process_point", Value: 1},
+			{Key: "creative_task_point", Value: 1},
+			{Key: "base_point", Value: 1},
+			{Key: "done_date", Value: 1},
+		}}},
+	}
+
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []TaskEntry
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+
 	return results, nil
 }
 

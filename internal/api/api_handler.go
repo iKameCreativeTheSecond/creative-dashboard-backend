@@ -82,6 +82,41 @@ func PostHandlerPerformancePoint(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
+func PostHandlerTaskEntries(w http.ResponseWriter, r *http.Request) {
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		log.Fatal(err)
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	isTeamStr := r.URL.Query().Get("isTeam")
+	isWeeklyStr := r.URL.Query().Get("isWeekly")
+	startTimeStr := body["startDate"].(string)
+	endTimeStr := body["endDate"].(string)
+	identifiersInterface := body["identifiers"].([]interface{})
+	identifiers := make([]string, len(identifiersInterface))
+	for i, v := range identifiersInterface {
+		identifiers[i] = v.(string)
+	}
+	startTime, _ := time.Parse(time.RFC3339, startTimeStr)
+	endTime, _ := time.Parse(time.RFC3339, endTimeStr)
+
+	var results []db.TaskEntry
+	for _, id := range identifiers {
+		res, err := db.GetTaskEntries(db.GetMongoClient(), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), id, startTime, endTime, isTeamStr == "true", isWeeklyStr == "true")
+		if err != nil {
+			log.Fatal(err)
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		results = append(results, res...)
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	json.NewEncoder(w).Encode(results)
+}
+
 func PostHandlerStaffMember(w http.ResponseWriter, r *http.Request) {
 
 	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
@@ -1331,6 +1366,7 @@ func Init() {
 	http.HandleFunc("/webhook/clickup/concept-done", HandleClickUpWebhookDoneConcept)
 
 	http.Handle("/post/performance-point", CORSMiddleware(http.HandlerFunc(PostHandlerPerformancePoint)))
+	http.Handle("/post/task-entries", CORSMiddleware(http.HandlerFunc(PostHandlerTaskEntries)))
 	http.Handle("/post/staff-member", CORSMiddleware(http.HandlerFunc(PostHandlerStaffMember)))
 	http.Handle("/get/last-week-team-performance", CORSMiddleware(http.HandlerFunc(HandleLastWeekTeamPerformance)))
 	http.Handle("/get/team-weekly-target", CORSMiddleware(http.HandlerFunc(HandleTeamWeeklyTarget)))
