@@ -1,10 +1,12 @@
 package apihandler
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -1272,7 +1274,9 @@ func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 	
 	var triggeringEmail string
 	var payload clickup.ClickUpWebhookPayload
-	log.Printf("Webhook task payload %s", r.Body );
+	bodyBytes, _ := io.ReadAll(r.Body)
+	log.Printf("Webhook task payload: %s", string(bodyBytes))
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
 		if len(payload.HistoryItems) > 0 {
 			triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
