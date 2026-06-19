@@ -1272,11 +1272,14 @@ func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 	
 	var triggeringEmail string
 	var payload clickup.ClickUpWebhookPayload
+	log.Printf("Webhook task payload %s", r.Body );
 	if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
-		taskID = strings.TrimSpace(payload.TaskID)
 		if len(payload.HistoryItems) > 0 {
 			triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
 		}
+	}else 
+	{
+		log.Printf("FAIL History get");
 	}
 
 	log.Printf("ClickUp webhook received task_id: %s, triggered by: %s", taskID, triggeringEmail)
