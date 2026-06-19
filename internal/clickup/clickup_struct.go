@@ -84,6 +84,26 @@ type ClickUpResponse struct {
 	LastPage bool          `json:"last_page"`
 }
 
+type ClickUpWebhookUser struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+type ClickUpHistoryItem struct {
+	Field  string             `json:"field"`
+	User   ClickUpWebhookUser `json:"user"`
+	Before interface{}        `json:"before"`
+	After  interface{}        `json:"after"`
+	Date   string             `json:"date"`
+}
+
+type ClickUpWebhookPayload struct {
+	Event        string               `json:"event"`
+	TaskID       string               `json:"task_id"`
+	HistoryItems []ClickUpHistoryItem `json:"history_items"`
+}
+
 type ClickUpWorkSpaceListResponse struct {
 	Lists []ClickUpTaskListResponse `json:"lists"`
 }

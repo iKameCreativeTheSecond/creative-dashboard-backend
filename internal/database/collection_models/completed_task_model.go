@@ -33,13 +33,18 @@ type CompletedTask struct {
 //	}
 //
 
-func UpsertCompletedTask(client *mongo.Client, dbName, collectionName string, task *CompletedTask) error {
+func UpsertCompletedTask(client *mongo.Client, dbName, collectionName string, task *CompletedTask, allowUpdate bool) error {
 	collection := client.Database(dbName).Collection(collectionName)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	filter := bson.M{"id": task.TaskID, "assignee_id": task.AssigneeID}
-	update := bson.M{"$set": task}
+	var update bson.M
+	if allowUpdate {
+		update = bson.M{"$set": task}
+	} else {
+		update = bson.M{"$setOnInsert": task}
+	}
 	opts := options.Update().SetUpsert(true)
 	_, err := collection.UpdateOne(ctx, filter, update, opts)
 	return err

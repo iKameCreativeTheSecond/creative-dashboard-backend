@@ -309,6 +309,14 @@ func GetEmailFromToken(token string) (string, bool) {
 	return session.Email, true
 }
 
+func IsAdmin(email string) bool {
+	member, err := db.GetMemberByEmail(os.Getenv("MONGO_URI"), os.Getenv("MONGODB_NAME"), os.Getenv("MONGODB_COLLECTION_STAFF_MEMBER"), email)
+	if err != nil {
+		return false
+	}
+	return member.Role == "admin" || member.Role == "Admin"
+}
+
 func HandleLastWeekTeamPerformance(w http.ResponseWriter, r *http.Request) {
 	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
 	if !ok || teamRoles == nil {
@@ -1255,11 +1263,14 @@ func HandleAdminRole(w http.ResponseWriter, r *http.Request) {
 
 func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
+
+	var triggeringEmail string
 	if taskID == "" {
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
-			if rawTaskID, ok := body["task_id"]; ok && rawTaskID != nil {
-				taskID = strings.TrimSpace(fmt.Sprint(rawTaskID))
+		var payload clickup.ClickUpWebhookPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+			taskID = strings.TrimSpace(payload.TaskID)
+			if len(payload.HistoryItems) > 0 {
+				triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
 			}
 		}
 	}
@@ -1269,7 +1280,7 @@ func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("ClickUp webhook received task_id: %s", taskID)
+	log.Printf("ClickUp webhook received task_id: %s, triggered by: %s", taskID, triggeringEmail)
 
 	task, err := clickup.FetchSingleTask(os.Getenv("CLICKUP_TOKEN"), taskID)
 	if err != nil {
@@ -1285,11 +1296,15 @@ func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isAdmin := IsAdmin(triggeringEmail)
+	log.Printf("Trigger task User %s is Admin %t task", triggeringEmail, isAdmin);
+
 	if err := collectionmodels.UpsertCompletedTask(
 		db.GetMongoClient(),
 		os.Getenv("MONGODB_NAME"),
 		os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"),
 		completedTask,
+		isAdmin,
 	); err != nil {
 		log.Printf("ClickUp webhook: error upserting task %s: %v", taskID, err)
 		http.Error(w, "failed to save task", http.StatusInternalServerError)
@@ -1308,11 +1323,14 @@ func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 
 func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
+
+	var triggeringEmail string
 	if taskID == "" {
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
-			if rawTaskID, ok := body["task_id"]; ok && rawTaskID != nil {
-				taskID = strings.TrimSpace(fmt.Sprint(rawTaskID))
+		var payload clickup.ClickUpWebhookPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+			taskID = strings.TrimSpace(payload.TaskID)
+			if len(payload.HistoryItems) > 0 {
+				triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
 			}
 		}
 	}
@@ -1322,7 +1340,7 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("ClickUp webhook received task_id: %s", taskID)
+	log.Printf("ClickUp webhook received task_id: %s, triggered by: %s", taskID, triggeringEmail)
 
 	task, err := clickup.FetchSingleTask(os.Getenv("CLICKUP_TOKEN"), taskID)
 	if err != nil {
@@ -1338,11 +1356,14 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isAdmin := IsAdmin((triggeringEmail))
+
 	if err := collectionmodels.UpsertCompletedTask(
 		db.GetMongoClient(),
 		os.Getenv("MONGODB_NAME"),
 		os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"),
 		completedTask,
+		isAdmin,
 	); err != nil {
 		log.Printf("ClickUp webhook: error upserting task %s: %v", taskID, err)
 		http.Error(w, "failed to save task", http.StatusInternalServerError)
