@@ -1,12 +1,10 @@
 package apihandler
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -1265,28 +1263,11 @@ func HandleAdminRole(w http.ResponseWriter, r *http.Request) {
 
 func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
-
 	
 	if taskID == "" {
 		http.Error(w, "missing task_id", http.StatusBadRequest)
 		return
 	}
-	
-	var triggeringEmail string
-	var payload clickup.ClickUpWebhookPayload
-	bodyBytes, _ := io.ReadAll(r.Body)
-	log.Printf("Webhook task payload: %s", string(bodyBytes))
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-	if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
-		if len(payload.HistoryItems) > 0 {
-			triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
-		}
-	}else 
-	{
-		log.Printf("FAIL History get");
-	}
-
-	log.Printf("ClickUp webhook received task_id: %s, triggered by: %s", taskID, triggeringEmail)
 
 	task, err := clickup.FetchSingleTask(os.Getenv("CLICKUP_TOKEN"), taskID)
 	if err != nil {
@@ -1302,8 +1283,18 @@ func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isAdmin := IsAdmin(triggeringEmail)
-	log.Printf("Trigger task User %s is Admin %t task", triggeringEmail, isAdmin);
+	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
+	isAdmin := false
+	if !ok || teamRoles == nil {
+		log.Println("!! Non Admin update task : Unauthorized access attempt")
+	} else {
+		for _, role := range teamRoles {
+			if role.Role == "admin" {
+				isAdmin = true
+				break
+			}
+		}
+	}
 
 	if err := collectionmodels.UpsertCompletedTask(
 		db.GetMongoClient(),
@@ -1351,17 +1342,18 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-	var triggeringEmail string
-	var payload clickup.ClickUpWebhookPayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
-		taskID = strings.TrimSpace(payload.TaskID)
-		if len(payload.HistoryItems) > 0 {
-			triggeringEmail = payload.HistoryItems[len(payload.HistoryItems)-1].User.Email
+	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
+	isAdmin := false
+	if !ok || teamRoles == nil {
+		log.Println("!! Non Admin update task : Unauthorized access attempt")
+	} else {
+		for _, role := range teamRoles {
+			if role.Role == "admin" {
+				isAdmin = true
+				break
+			}
 		}
 	}
-	isAdmin := IsAdmin((triggeringEmail))
-	log.Printf("ClickUp webhook received task_id: %s, triggered by: %s", taskID, triggeringEmail)
 
 	if err := collectionmodels.UpsertCompletedTask(
 		db.GetMongoClient(),
@@ -1384,12 +1376,59 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func HandleUpdateTaskDone(w http.ResponseWriter, r *http.Request) {
+	var completedTask collectionmodels.CompletedTask
+	if err := json.NewDecoder(r.Body).Decode(&completedTask); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if completedTask.TaskID == "" {
+		http.Error(w, "missing task id", http.StatusBadRequest)
+		return
+	}
+
+	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
+	isAdmin := false
+	if !ok || teamRoles == nil {
+		log.Println("!! Non Admin update task : Unauthorized access attempt")
+	} else {
+		for _, role := range teamRoles {
+			if role.Role == "admin" {
+				isAdmin = true
+				break
+			}
+		}
+	}
+
+	if err := collectionmodels.UpsertCompletedTask(
+		db.GetMongoClient(),
+		os.Getenv("MONGODB_NAME"),
+		os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"),
+		&completedTask,
+		isAdmin,
+	); err != nil {
+		log.Printf("update-task-done: error upserting task %s: %v", completedTask.TaskID, err)
+		http.Error(w, "failed to save task", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("update-task-done: task %s saved successfully", completedTask.TaskID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"task_id": completedTask.TaskID,
+		"status":  "saved",
+	})
+}
+
 func Init() {
 	http.Handle("/login", CORSMiddleware(http.HandlerFunc(LoginHandler)))
 
 	// ClickUp webhook test — logs and echoes the payload
 	http.HandleFunc("/webhook/clickup/task-done", HandleClickUpWebhookDoneTask)
 	http.HandleFunc("/webhook/clickup/concept-done", HandleClickUpWebhookDoneConcept)
+	http.Handle("/update-task-done", CORSMiddleware(http.HandlerFunc(HandleUpdateTaskDone)))
 
 	http.Handle("/post/performance-point", CORSMiddleware(http.HandlerFunc(PostHandlerPerformancePoint)))
 	http.Handle("/post/task-entries", CORSMiddleware(http.HandlerFunc(PostHandlerTaskEntries)))
