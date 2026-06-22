@@ -1283,25 +1283,12 @@ func HandleClickUpWebhookDoneTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
-	isAdmin := false
-	if !ok || teamRoles == nil {
-		log.Println("!! Non Admin update task : Unauthorized access attempt")
-	} else {
-		for _, role := range teamRoles {
-			if role.Role == "admin" {
-				isAdmin = true
-				break
-			}
-		}
-	}
-
 	if err := collectionmodels.UpsertCompletedTask(
 		db.GetMongoClient(),
 		os.Getenv("MONGODB_NAME"),
 		os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"),
 		completedTask,
-		isAdmin,
+		false,
 	); err != nil {
 		log.Printf("ClickUp webhook: error upserting task %s: %v", taskID, err)
 		http.Error(w, "failed to save task", http.StatusInternalServerError)
@@ -1342,25 +1329,12 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	teamRoles, ok := GetUserRole(r.Header.Get("Authorization"))
-	isAdmin := false
-	if !ok || teamRoles == nil {
-		log.Println("!! Non Admin update task : Unauthorized access attempt")
-	} else {
-		for _, role := range teamRoles {
-			if role.Role == "admin" {
-				isAdmin = true
-				break
-			}
-		}
-	}
-
 	if err := collectionmodels.UpsertCompletedTask(
 		db.GetMongoClient(),
 		os.Getenv("MONGODB_NAME"),
 		os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"),
 		completedTask,
-		isAdmin,
+		false,
 	); err != nil {
 		log.Printf("ClickUp webhook: error upserting task %s: %v", taskID, err)
 		http.Error(w, "failed to save task", http.StatusInternalServerError)
