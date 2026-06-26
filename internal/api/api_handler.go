@@ -354,15 +354,17 @@ func HandleLastWeekTeamPerformance(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Tính toán startDate là 0 giờ thứ 3 tuần trước, endDate là trước nửa đêm thứ 2 tuần này
-	now := time.Now()
-	// Tìm thứ 2 tuần này
-	monday := now.AddDate(0, 0, -int(now.Weekday())+1)
-	// End time là trước nửa đêm thứ 2 (23:59:59)
-	endDate := time.Date(monday.Year(), monday.Month(), monday.Day(), 23, 59, 59, 0, monday.Location())
-	// Start time là 0 giờ thứ 3 tuần trước
-	lastWeekTuesday := monday.AddDate(0, 0, -6) // Thứ 3 tuần trước
-	startDate := time.Date(lastWeekTuesday.Year(), lastWeekTuesday.Month(), lastWeekTuesday.Day(), 0, 0, 0, 0, lastWeekTuesday.Location())
+	// startDate = last week Monday 00:00:00, endDate = last week Sunday 23:59:59
+	now := time.Now().UTC()
+	weekday := int(now.Weekday())
+	if weekday == 0 {
+		weekday = 7 // ISO: treat Sunday as day 7 so Monday is always day 1
+	}
+	thisMonday := now.AddDate(0, 0, -(weekday - 1))
+	lastWeekMonday := thisMonday.AddDate(0, 0, -7)
+	lastWeekSunday := thisMonday.AddDate(0, 0, -1)
+	startDate := time.Date(lastWeekMonday.Year(), lastWeekMonday.Month(), lastWeekMonday.Day(), 0, 0, 0, 0, lastWeekMonday.Location())
+	endDate := time.Date(lastWeekSunday.Year(), lastWeekSunday.Month(), lastWeekSunday.Day(), 23, 59, 59, 0, lastWeekSunday.Location())
 	var results []db.PerformancePointTotalWithTime
 	if len(teams) > 0 {
 		for _, team := range teams {
