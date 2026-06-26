@@ -1407,7 +1407,6 @@ func Init() {
 	http.Handle("/update-task-done", CORSMiddleware(http.HandlerFunc(HandleUpdateTaskDone)))
 
 	http.Handle("/post/performance-point", CORSMiddleware(http.HandlerFunc(PostHandlerPerformancePoint)))
-	http.Handle("/post/task-entries", CORSMiddleware(http.HandlerFunc(PostHandlerTaskEntries)))
 	http.Handle("/post/staff-member", CORSMiddleware(http.HandlerFunc(PostHandlerStaffMember)))
 	http.Handle("/get/last-week-team-performance", CORSMiddleware(http.HandlerFunc(HandleLastWeekTeamPerformance)))
 	http.Handle("/get/team-weekly-target", CORSMiddleware(http.HandlerFunc(HandleTeamWeeklyTarget)))
@@ -1457,6 +1456,9 @@ func Init() {
 
 	http.Handle("/post/project-issues", CORSMiddleware(http.HandlerFunc(HandlePostProjectIssues)))
 	http.Handle("/post/update-project-issue", CORSMiddleware(http.HandlerFunc(HandleUpdateProjectIssue)))
+
+	http.Handle("/post/task-entries", CORSMiddleware(http.HandlerFunc(PostHandlerTaskEntries)))
+
 
 	// Khởi tạo các background tasks
 	go ClearSessionMapSchedule()
