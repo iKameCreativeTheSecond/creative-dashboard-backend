@@ -1006,40 +1006,26 @@ func GetCreativeTaskFactor(tools []collectionmodels.CreativeTool, inUsed []int, 
 func splitByMonday(startDate, endDate time.Time) [][2]time.Time {
 	var ranges [][2]time.Time
 
-	// Normalize ngày (trunc về 00:00)
 	startDate = startDate.Truncate(24 * time.Hour)
 	endDate = endDate.Truncate(24 * time.Hour)
 
 	prev := startDate
 
-	// Tìm thứ Hai đầu tiên sau startDate
-	current := startDate
-	if current.Weekday() != time.Monday {
-		daysUntilMonday := (int(time.Monday) - int(current.Weekday()) + 7) % 7
-		if daysUntilMonday == 0 {
-			daysUntilMonday = 7
-		}
-		current = current.AddDate(0, 0, daysUntilMonday)
+	// Find the first Sunday >= startDate (end-of-week boundary)
+	daysUntilSunday := (int(time.Sunday) - int(startDate.Weekday()) + 7) % 7
+	sunday := startDate.AddDate(0, 0, daysUntilSunday)
+
+	for !sunday.After(endDate) {
+		endOfSunday := time.Date(sunday.Year(), sunday.Month(), sunday.Day(), 23, 59, 59, 0, sunday.Location())
+		ranges = append(ranges, [2]time.Time{prev, endOfSunday})
+		prev = sunday.AddDate(0, 0, 1) // next Monday 00:00:00
+		sunday = sunday.AddDate(0, 0, 7)
 	}
 
-	for current.Before(endDate) {
-		// Kết thúc là 23:59:59 thứ 2
-		endOfMonday := time.Date(current.Year(), current.Month(), current.Day(), 23, 59, 59, 0, current.Location())
-		ranges = append(ranges, [2]time.Time{prev, endOfMonday})
-		// Bắt đầu phần tử kế tiếp là 0:00:00 thứ 3
-		prev = endOfMonday.Add(time.Second)
-		current = current.AddDate(0, 0, 7)
-	}
-
-	// Đoạn cuối cùng kết thúc ở endDate
+	// Remaining partial week up to endDate (inclusive)
 	if prev.Before(endDate) || prev.Equal(endDate) {
-		// Nếu endDate là thứ 2 thì kết thúc là 23:59:59 endDate
-		if endDate.Weekday() == time.Monday {
-			endOfMonday := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 23, 59, 59, 0, endDate.Location())
-			ranges = append(ranges, [2]time.Time{prev, endOfMonday})
-		} else {
-			ranges = append(ranges, [2]time.Time{prev, endDate})
-		}
+		endOfEndDate := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 23, 59, 59, 0, endDate.Location())
+		ranges = append(ranges, [2]time.Time{prev, endOfEndDate})
 	}
 
 	return ranges
