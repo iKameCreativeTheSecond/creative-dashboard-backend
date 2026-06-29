@@ -30,6 +30,22 @@ func GetProjectIssues(client *mongo.Client, dbName, collectionName string, start
 	if err != nil {
 		return nil, err
 	}
+
+	hasTaskCompleted, err2 := GetProjectsWithCompletedTasks(client, dbName, os.Getenv("MONGODB_COLLECTION_COMPLETED_TASK"), startTime, endTime)
+	if err2 != nil {
+		fmt.Println("Error getting projects with completed tasks:", err2)
+	} else {
+		existingProjects := make(map[string]bool)
+		for _, proj := range projects {
+			existingProjects[proj.Project] = true
+		}
+		for _, projectName := range hasTaskCompleted {
+			if !existingProjects[projectName] {
+				projects = append(projects, &WeeklyOrderProject{Project: projectName})
+			}
+		}
+	}
+
 	var allIssues []ProjectIssue
 	for _, proj := range projects {
 		issues, err := GetProjectIssue(client, dbName, collectionName, proj.Project, startTime, endTime)
@@ -178,7 +194,7 @@ func InsertProjectIssues(client *mongo.Client, dbName, collectionName string, is
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	collection := client.Database(dbName).Collection(collectionName)
-	var docs []interface{}
+	var docs []any
 	for _, issue := range issues {
 		docs = append(docs, issue)
 	}

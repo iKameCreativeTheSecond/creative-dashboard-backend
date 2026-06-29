@@ -62,6 +62,49 @@ func InsertCompletedTaskToDataBase(client *mongo.Client, dbName, collectionName 
 	return err
 }
 
+func GetProjectsWithCompletedTasks(client *mongo.Client, dbName, collectionName string, startDate, endDate time.Time) ([]string, error) {
+	collection := client.Database(dbName).Collection(collectionName)
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: "done_date", Value: bson.D{
+				{Key: "$gte", Value: startDate},
+				{Key: "$lte", Value: endDate},
+			}},
+		}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$project"},
+		}}},
+		{{Key: "$sort", Value: bson.D{
+			{Key: "_id", Value: 1},
+		}}},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var projects []string
+	for cursor.Next(ctx) {
+		var result bson.M
+		if err := cursor.Decode(&result); err != nil {
+			return nil, err
+		}
+		if name, ok := result["_id"].(string); ok {
+			projects = append(projects, name)
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
 func GetCompletedTasksByDateRange(client *mongo.Client, dbName, collectionName string, isTeam bool, identifier string, startDate, endDate time.Time) ([]CompletedTask, error) {
 	collection := client.Database(dbName).Collection(collectionName)
 

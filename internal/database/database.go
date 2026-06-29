@@ -916,29 +916,23 @@ func splitByMonday(startDate, endDate time.Time) [][2]time.Time {
 }
 
 func SaveProjectReport(excludeTeams []string) error {
-	nowLoc, locErr := time.LoadLocation("Asia/Ho_Chi_Minh")
-	if locErr != nil {
-		nowLoc = time.FixedZone("Asia/Ho_Chi_Minh", 7*60*60)
-	}
+	now := time.Now().UTC()
+	todayMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	now := time.Now().In(nowLoc)
-	todayMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, nowLoc)
-
-	// Report the previous full week: last Monday 00:00 -> this Monday 00:00 (minus 1 second).
+	// Report the previous full week: last Monday 00:00 -> last Sunday 23:59:59 (UTC).
 	daysSinceMonday := (int(todayMidnight.Weekday()) - int(time.Monday) + 7) % 7
 	thisWeekMonday := todayMidnight.AddDate(0, 0, -daysSinceMonday)
 	lastWeekMonday := thisWeekMonday.AddDate(0, 0, -7)
-	// Move to end of Monday: 23:59:59 local time
-	thisWeekMonday = thisWeekMonday.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+	lastWeekSunday := lastWeekMonday.AddDate(0, 0, 6).Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 
-	fmt.Println("Saving project report for period (local):", lastWeekMonday, "to", thisWeekMonday)
+	fmt.Println("Saving project report for period (UTC):", lastWeekMonday, "to", lastWeekSunday)
 
 	issues, err := collectionmodels.GetProjectIssues(
 		client,
 		os.Getenv("MONGODB_NAME"),
 		os.Getenv("MONGODB_COLLECTION_WEEKLY_ORDER"),
 		lastWeekMonday,
-		thisWeekMonday,
+		lastWeekSunday,
 	)
 
 	if err != nil {

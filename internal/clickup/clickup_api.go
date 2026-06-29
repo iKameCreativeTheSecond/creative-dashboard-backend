@@ -227,11 +227,6 @@ func ScheduleWeeklyTaskSync() {
 		loc = time.UTC
 	}
 	c := cron.New(cron.WithLocation(loc))
-	_, err = c.AddFunc("0 1 * * 2", SyncronizeWeeklyClickUpTasksMondayNight)
-	if err != nil {
-		fmt.Println("Cron add error:", err)
-		return
-	}
 	_, err = c.AddFunc("0 0 * * 3", SyncronizeWeeklyClickUpTasksTuesdayNight)
 	if err != nil {
 		fmt.Println("Cron add error:", err)
@@ -241,12 +236,7 @@ func ScheduleWeeklyTaskSync() {
 }
 
 func SyncronizeWeeklyClickUpTasksTuesdayNight() {
-	database.SaveProjectReport([]string{constants.Concept, constants.Art})
-	fmt.Println("Completed saving project report at", time.Now())
-}
-
-func SyncronizeWeeklyClickUpTasksMondayNight() {
-	database.SaveProjectReport([]string{constants.Playable, constants.Video})
+	database.SaveProjectReport([]string{constants.Concept, constants.Art, constants.Playable, constants.Video})
 	fmt.Println("Completed saving project report at", time.Now())
 }
 
