@@ -467,6 +467,7 @@ type TaskEntry struct {
 	AssigneeID           string           `bson:"assignee_id"`
 	Team                 string           `bson:"team"`
 	Level                int              `bson:"level"`
+	Project              string           `bson:"project"`
 	PerformancePoint     float64          `bson:"performance_point"`
 	ToolPointsT          []ToolPointEntry `bson:"tool_points_t"`
 	ToolPointsQ          []ToolPointEntry `bson:"tool_points_q"`
@@ -799,6 +800,7 @@ func GetTaskEntries(client *mongo.Client, dbName, collectionName string, identif
 			AssigneeID:           task.AssigneeID,
 			Team:                 task.Team,
 			Level:                task.Level,
+			Project:              task.Project,
 			PerformancePoint:     float64(taskPoint) + creativeProcessPoint,
 			ToolPointsT:          toolPointsT,
 			ToolPointsQ:          toolPointsQ,
