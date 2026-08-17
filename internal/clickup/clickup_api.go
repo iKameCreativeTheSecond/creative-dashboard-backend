@@ -728,14 +728,7 @@ func ProcessWebhookConcept(task *ClickUpTask) (*collectionmodels.CompletedTask, 
 		projectName = projectName[spaceIdx+1:]
 	}
 
-	assigneeEmail := ""
-	if len(task.Assignees) > 0 {
-		assigneeIdx := 0
-		if team != constants.Concept && len(task.Assignees) > 1 {
-			assigneeIdx = 1
-		}
-		assigneeEmail = task.Assignees[assigneeIdx].Email
-	}
+	assigneeEmail := resolveAssigneeEmail(task.Assignees, team)
 
 	taskType := strings.ToLower(team)
 
@@ -865,14 +858,7 @@ func ProcessWebhookTask(task *ClickUpTask) (*collectionmodels.CompletedTask, err
 		projectName = projectName[spaceIdx+1:]
 	}
 
-	assigneeEmail := ""
-	if len(task.Assignees) > 0 {
-		assigneeIdx := 0
-		if team != constants.Concept && len(task.Assignees) > 1 {
-			assigneeIdx = 1
-		}
-		assigneeEmail = task.Assignees[assigneeIdx].Email
-	}
+	assigneeEmail := resolveAssigneeEmail(task.Assignees, team)
 
 	taskType := strings.ToLower(team)
 	switch {
