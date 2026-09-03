@@ -250,8 +250,9 @@ func FetchListNamesInSpace(token string, spaceID string) ([]string, error) {
 }
 
 // HandleClickUpConceptListEvent is triggered by both the "listCreated" and "listUpdated"
-// ClickUp webhook events for the concept space (CLICKUP_SPACE_ID_CONCEPT) and returns the
-// current names of every list in that space.
+// ClickUp webhook events for the concept space (CLICKUP_SPACE_ID_CONCEPT). For every list
+// whose name follows the "<id>_<project name>" format (e.g. "137_Pub Item Sort Enfinity"),
+// it ensures a matching ProjectDetail document exists in MONGODB_COLLECTION_PROJECT_DETAIL.
 func HandleClickUpConceptListEvent(event string) ([]string, error) {
 	spaceID := os.Getenv("CLICKUP_SPACE_ID_CONCEPT")
 
@@ -261,12 +262,69 @@ func HandleClickUpConceptListEvent(event string) ([]string, error) {
 		return nil, err
 	}
 
-	fmt.Printf("📋 ClickUp event '%s' — lists in concept space %s:\n", event, spaceID)
+	client := database.GetMongoClient()
+	dbName := os.Getenv("MONGODB_NAME")
+	collName := os.Getenv("MONGODB_COLLECTION_PROJECT_DETAIL")
+
+	existingDetails, err := collectionmodels.GetAllProjectDetails(client, dbName, collName)
+	if err != nil {
+		fmt.Printf("Error fetching existing project details: %v\n", err)
+		return names, err
+	}
+
+	existingIDs := make(map[int]bool, len(existingDetails))
+	existingProjects := make(map[string]bool, len(existingDetails))
+	for _, detail := range existingDetails {
+		existingIDs[detail.ProjectID] = true
+		existingProjects[strings.ToLower(strings.TrimSpace(detail.Project))] = true
+	}
+
 	for _, name := range names {
-		fmt.Println("  -", name)
+		projectID, projectName, ok := parseListNameToProject(name)
+		if !ok {
+			fmt.Printf("Skipping list %q: does not match \"<id>_<project name>\" format\n", name)
+			continue
+		}
+
+		projectKey := strings.ToLower(strings.TrimSpace(projectName))
+		if existingIDs[projectID] || existingProjects[projectKey] {
+			// Already exists by id or project name — skip.
+			continue
+		}
+
+		projectDetail := &collectionmodels.ProjectDetail{
+			ProjectID: projectID,
+			Project:   projectName,
+		}
+		if err := collectionmodels.InstertNewProjectDetailToDatabase(client, dbName, collName, projectDetail); err != nil {
+			fmt.Printf("Error inserting project detail for %q: %v\n", projectName, err)
+			continue
+		}
+		fmt.Printf("Inserted new project detail: id=%d, project=%q\n", projectID, projectName)
+
+		existingIDs[projectID] = true
+		existingProjects[projectKey] = true
 	}
 
 	return names, nil
+}
+
+// parseListNameToProject parses a ClickUp list name in the "<id>_<project name>" format
+// (e.g. "137_Pub Item Sort Enfinity") into its numeric id and project name.
+func parseListNameToProject(listName string) (int, string, bool) {
+	parts := strings.SplitN(listName, "_", 2)
+	if len(parts) != 2 {
+		return 0, "", false
+	}
+	id, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, "", false
+	}
+	project := strings.TrimSpace(parts[1])
+	if project == "" {
+		return 0, "", false
+	}
+	return id, project, true
 }
 
 // listTeamWebhooks lists every webhook currently registered for the given ClickUp team.
@@ -361,7 +419,7 @@ func EnsureConceptListWebhook() error {
 		return fmt.Errorf("create webhook failed (status=%d): %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Println("ClickUp webhook registered successfully:", string(body))
+	fmt.Println("ClickUp webhook registered successfully to Concept space to get list")
 	return nil
 }
 
