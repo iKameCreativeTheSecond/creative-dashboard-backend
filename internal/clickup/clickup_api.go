@@ -1,6 +1,7 @@
 package clickup
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -203,6 +204,167 @@ func FetchTaskList(token string, listID string, isCompleted bool, tag string, in
 	return allTasks, nil
 }
 
+// FetchListNamesInSpace fetches every list in the given ClickUp space and returns their names.
+func FetchListNamesInSpace(token string, spaceID string) ([]string, error) {
+	url := fmt.Sprintf("https://api.clickup.com/api/v2/space/%s/list", spaceID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		fmt.Println("Error creating request to fetch space lists:", err)
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("Error sending request to ClickUp API:", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		fmt.Printf("Error reading ClickUp response body (spaceID=%s, status=%d): %v\n", spaceID, resp.StatusCode, readErr)
+		return nil, readErr
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch space lists failed (spaceID=%s, status=%d): %s", spaceID, resp.StatusCode, string(body))
+	}
+
+	var listsResp ClickUpWorkSpaceListResponse
+	if err := json.Unmarshal(body, &listsResp); err != nil {
+		fmt.Printf("Error unmarshalling ClickUp workspace list response: %v\nResponse body: %s\n", err, string(body))
+		return nil, err
+	}
+
+	names := make([]string, 0, len(listsResp.Lists))
+	for _, list := range listsResp.Lists {
+		names = append(names, list.Name)
+	}
+
+	return names, nil
+}
+
+// HandleClickUpConceptListEvent is triggered by both the "listCreated" and "listUpdated"
+// ClickUp webhook events for the concept space (CLICKUP_SPACE_ID_CONCEPT) and returns the
+// current names of every list in that space.
+func HandleClickUpConceptListEvent(event string) ([]string, error) {
+	spaceID := os.Getenv("CLICKUP_SPACE_ID_CONCEPT")
+
+	names, err := FetchListNamesInSpace(os.Getenv("CLICKUP_TOKEN"), spaceID)
+	if err != nil {
+		fmt.Printf("Error fetching list names for concept space %s (event=%s): %v\n", spaceID, event, err)
+		return nil, err
+	}
+
+	fmt.Printf("📋 ClickUp event '%s' — lists in concept space %s:\n", event, spaceID)
+	for _, name := range names {
+		fmt.Println("  -", name)
+	}
+
+	return names, nil
+}
+
+// listTeamWebhooks lists every webhook currently registered for the given ClickUp team.
+func listTeamWebhooks(token string, teamID string) ([]ClickUpWebhookInfo, error) {
+	url := fmt.Sprintf("https://api.clickup.com/api/v2/team/%s/webhook", teamID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, readErr
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("list webhooks failed (status=%d): %s", resp.StatusCode, string(body))
+	}
+
+	var listResp ClickUpGetWebhooksResponse
+	if err := json.Unmarshal(body, &listResp); err != nil {
+		return nil, fmt.Errorf("error unmarshalling webhook list response: %w", err)
+	}
+	return listResp.Webhooks, nil
+}
+
+// EnsureConceptListWebhook registers a ClickUp webhook (once) that notifies this server's
+// /webhook/clickup/concept-list-event endpoint whenever a list is created or updated in the
+// concept space. It checks existing webhooks for the team first so it's safe to call on
+// every server start without creating duplicates.
+func EnsureConceptListWebhook() error {
+	token := os.Getenv("CLICKUP_TOKEN")
+	teamID := os.Getenv("CLICKUP_TEAM_ID")
+	spaceID := os.Getenv("CLICKUP_SPACE_ID_CONCEPT")
+	baseURL := os.Getenv("CLICKUP_WEBHOOK_BASE_URL")
+
+	if teamID == "" || baseURL == "" {
+		return fmt.Errorf("CLICKUP_TEAM_ID or CLICKUP_WEBHOOK_BASE_URL not set, skipping webhook registration")
+	}
+
+	endpoint := strings.TrimRight(baseURL, "/") + "/webhook/clickup/concept-list-event"
+
+	existing, err := listTeamWebhooks(token, teamID)
+	if err != nil {
+		return fmt.Errorf("error listing existing webhooks: %w", err)
+	}
+	for _, wh := range existing {
+		if wh.Endpoint == endpoint {
+			fmt.Println("ClickUp webhook already registered:", wh.Id)
+			return nil
+		}
+	}
+
+	reqBody, err := json.Marshal(map[string]any{
+		"endpoint": endpoint,
+		"events":   []string{"listCreated", "listUpdated"},
+		"space_id": spaceID,
+	})
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("https://api.clickup.com/api/v2/team/%s/webhook", teamID)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return readErr
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("create webhook failed (status=%d): %s", resp.StatusCode, string(body))
+	}
+
+	fmt.Println("ClickUp webhook registered successfully:", string(body))
+	return nil
+}
+
 func UnixMillisToTime(ms int64) time.Time {
 	sec := ms / 1000
 	nsec := (ms % 1000) * int64(time.Millisecond)
@@ -218,6 +380,10 @@ func UnixMillisToTimeStr(msStr string) time.Time {
 func Init() {
 	go ScheduleWeeklyTaskSync()
 	// SyncronizeWeeklyClickUpTasksMondayNight()
+
+	if err := EnsureConceptListWebhook(); err != nil {
+		fmt.Println("Error ensuring ClickUp concept list webhook:", err)
+	}
 }
 
 func ScheduleWeeklyTaskSync() {

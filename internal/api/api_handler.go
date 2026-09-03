@@ -1352,6 +1352,50 @@ func HandleClickUpWebhookDoneConcept(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleClickUpConceptListEvent handles both the "listCreated" and "listUpdated" ClickUp
+// webhook events for the concept space and responds with the current names of every list
+// in that space (CLICKUP_SPACE_ID_CONCEPT).
+func HandleClickUpConceptListEvent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		Event string `json:"event"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	switch payload.Event {
+	case "listCreated", "listUpdated":
+		names, err := clickup.HandleClickUpConceptListEvent(payload.Event)
+		if err != nil {
+			log.Printf("ClickUp webhook: error handling %s event: %v", payload.Event, err)
+			http.Error(w, "failed to fetch list names", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("ClickUp webhook: %s event — %d list(s) in concept space:", payload.Event, len(names))
+		for i, name := range names {
+			log.Printf("  [%d] %s", i, name)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"event": payload.Event,
+			"lists": names,
+		})
+	default:
+		log.Printf("ClickUp webhook: ignoring unhandled event %q", payload.Event)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Acknowledged"))
+	}
+}
+
 func HandleUpdateTaskDone(w http.ResponseWriter, r *http.Request) {
 	var completedTask collectionmodels.CompletedTask
 	if err := json.NewDecoder(r.Body).Decode(&completedTask); err != nil {
@@ -1404,6 +1448,7 @@ func Init() {
 	// ClickUp webhook test — logs and echoes the payload
 	http.HandleFunc("/webhook/clickup/task-done", HandleClickUpWebhookDoneTask)
 	http.HandleFunc("/webhook/clickup/concept-done", HandleClickUpWebhookDoneConcept)
+	http.HandleFunc("/webhook/clickup/concept-list-event", HandleClickUpConceptListEvent)
 	http.Handle("/update-task-done", CORSMiddleware(http.HandlerFunc(HandleUpdateTaskDone)))
 
 	http.Handle("/post/performance-point", CORSMiddleware(http.HandlerFunc(PostHandlerPerformancePoint)))

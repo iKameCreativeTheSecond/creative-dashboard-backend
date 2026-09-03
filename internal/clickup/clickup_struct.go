@@ -112,3 +112,13 @@ type ClickUpTaskListResponse struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
 }
+
+type ClickUpWebhookInfo struct {
+	Id       string   `json:"id"`
+	Endpoint string   `json:"endpoint"`
+	Events   []string `json:"events"`
+}
+
+type ClickUpGetWebhooksResponse struct {
+	Webhooks []ClickUpWebhookInfo `json:"webhooks"`
+}
